@@ -101,6 +101,107 @@ def _ask(task: str, data: dict):
     return None
 
 
+NATIVE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+
+
+def _ask_grounded(system: str, task: str, data: dict):
+    """Gemini with Google Search grounding, for facts not in our data (segments,
+    customers, management, recent events). Falls back to no search if grounding
+    is unavailable. Returns (parsed JSON, list of source links)."""
+    token = _token()
+    if not token:
+        return None, []
+    base = {
+        "systemInstruction": {"parts": [{"text": system}]},
+        "contents": [{"role": "user", "parts": [{"text": f"{task}\n\nDATA:\n{json.dumps(data, default=str)}"}]}],
+        "generationConfig": {"temperature": 0.3},
+    }
+    attempts = [(m, w, True) for m in MODELS for w in RETRY_WAITS] + [(MODELS[0], 10, False)]
+    for model, wait, search in attempts:
+        if time.monotonic() - _started + wait > TIME_BUDGET:
+            print("     AI time budget used up; skipping")
+            break
+        time.sleep(wait)
+        body = {**base, "tools": [{"google_search": {}}]} if search else base
+        req = urllib.request.Request(
+            NATIVE.format(model=model),
+            data=json.dumps(body).encode(),
+            headers={"x-goog-api-key": token, "Content-Type": "application/json"},
+        )
+        raw = b""
+        try:
+            raw = urllib.request.urlopen(req, timeout=240).read()
+            cand = json.loads(raw)["candidates"][0]
+            text = "".join(p.get("text", "") for p in cand["content"]["parts"])
+            # Grounded replies can't be forced into JSON mode, so cut out the JSON object
+            out = json.loads(text[text.index("{"): text.rindex("}") + 1])
+            out["model"] = model + (" + Google Search" if search else "")
+            sources = [
+                {"title": c["web"].get("title"), "uri": c["web"].get("uri")}
+                for c in cand.get("groundingMetadata", {}).get("groundingChunks", []) if "web" in c
+            ]
+            return out, sources
+        except urllib.error.HTTPError as e:
+            print(f"     {model} (search={search}) failed: HTTP {e.code} {e.read()[:200]!r}")
+        except Exception as e:
+            print(f"     {model} (search={search}) failed: {e} | response: {raw[:300]!r}")
+    return None, []
+
+
+DEEP_SYSTEM = SYSTEM.replace(
+    "- Use ONLY the data provided. Never invent numbers, events, or analyst targets.",
+    "- Numbers (prices, financials, ratios) must come from the DATA provided. Never invent them.\n"
+    "- You MAY use Google Search for qualitative facts not in the data: business segments, major\n"
+    "  customers, competitors, management background, corporate exercises, recent events. Name the\n"
+    "  source for anything found this way.\n"
+    "- Fair-value scenarios are your estimates: show the simple maths (e.g. EPS x P/E) behind them.",
+)
+
+DEEP_SCHEMA = """{
+  "summary": "4-5 sentence executive summary a busy investor can read in 30 seconds",
+  "business": {
+    "what_they_do": "2-3 sentences in plain English",
+    "segments": ["main business segments / products, with share of revenue if known"],
+    "customers_and_markets": "who buys from them and where",
+    "competitive_position": "competitors and how this company compares",
+    "moat": "durable advantages, or say plainly if there is none"
+  },
+  "management_and_ownership": "2-3 sentences on key people and shareholding (insider %, institutions)",
+  "financial_health": {
+    "growth": "revenue and profit trend with numbers",
+    "profitability": "margins and ROE trend",
+    "balance_sheet": "cash, debt, net cash/debt position",
+    "cash_flow": "operating cash flow, capex, free cash flow",
+    "dividends": "dividend record and sustainability"
+  },
+  "recent_developments": ["up to 5 recent events, newest first, with source"],
+  "valuation": {
+    "current": "how the stock is valued now and versus its own history",
+    "scenarios": [
+      {"case": "Bear", "fair_value_rm": "e.g. 0.30-0.35", "assumptions": "the maths behind it"},
+      {"case": "Base", "fair_value_rm": "...", "assumptions": "..."},
+      {"case": "Bull", "fair_value_rm": "...", "assumptions": "..."}
+    ]
+  },
+  "bull_case": ["3-4 reasons it could do well"],
+  "bear_case": ["3-4 reasons it could do badly"],
+  "catalysts": ["upcoming events that could move the price"],
+  "risks": ["key risks"],
+  "verdict": {
+    "stance": "one of: Accumulate | Hold | Wait | Avoid",
+    "conviction": "Low | Medium | High",
+    "summary": "2-3 sentences for a 6-24 month investor",
+    "entry_plan": "price zones to consider buying, from the key levels and fair values",
+    "invalidation": "what price or event would make the thesis wrong"
+  },
+  "verify_yourself": ["3-5 specific things to check in the annual report or Bursa filings before investing"]
+}"""
+
+
+def deep_dive(data: dict):
+    return _ask_grounded(DEEP_SYSTEM, f"Write a full due-diligence report on this company. Reply with only this JSON:\n{DEEP_SCHEMA}", data)
+
+
 def stock_brief(s: dict):
     data = {
         "stock": f"{s['name']} ({s['short']}, Bursa code {s['code']})",

@@ -59,3 +59,49 @@ def _num(v):
         return None if pd.isna(v) else float(v)
     except (TypeError, ValueError):
         return None
+
+
+# Rows pulled from Yahoo's statements for the deep-dive tables
+_INCOME = {"revenue": "Total Revenue", "gross_profit": "Gross Profit",
+           "operating_income": "Operating Income", "net_income": "Net Income", "eps": "Diluted EPS"}
+_BALANCE = {"total_assets": "Total Assets", "total_debt": "Total Debt",
+            "cash": "Cash And Cash Equivalents", "equity": "Stockholders Equity"}
+_CASHFLOW = {"operating_cf": "Operating Cash Flow", "capex": "Capital Expenditure",
+             "free_cf": "Free Cash Flow", "dividends_paid": "Common Stock Dividend Paid"}
+
+
+def _table(*frames_and_rows) -> dict:
+    """Merge several statement DataFrames into {period: {field: value}}."""
+    out = {}
+    for df, rows in frames_and_rows:
+        if df is None or df.empty:
+            continue
+        for col in df.columns:
+            period = col.strftime("%Y-%m-%d")
+            for field, row in rows.items():
+                out.setdefault(period, {})[field] = _num(df.loc[row, col]) if row in df.index else None
+    return dict(sorted(out.items(), reverse=True))
+
+
+def fetch_financials(code: str) -> dict:
+    tk = yf.Ticker(ticker_for(code))
+    info = tk.info or {}
+    fin = {"annual": {}, "quarterly": {}, "dividends_by_year": {}, "ownership": {}, "officers": [], "profile": {}}
+    try:
+        fin["annual"] = _table((tk.income_stmt, _INCOME), (tk.balance_sheet, _BALANCE), (tk.cashflow, _CASHFLOW))
+        fin["quarterly"] = _table((tk.quarterly_income_stmt, _INCOME))
+    except Exception as e:
+        print(f"     statements failed for {code}: {e}")
+    try:
+        divs = tk.dividends
+        fin["dividends_by_year"] = {str(y): round(float(v), 4) for y, v in divs.groupby(divs.index.year).sum().tail(8).items()}
+    except Exception:
+        pass
+    for k in ("heldPercentInsiders", "heldPercentInstitutions"):
+        fin["ownership"][k] = info.get(k)
+    fin["officers"] = [{"name": o.get("name"), "title": o.get("title")} for o in info.get("companyOfficers", [])[:6]]
+    fin["profile"] = {k: info.get(k) for k in (
+        "fullTimeEmployees", "city", "country", "website", "sharesOutstanding", "totalCash", "totalDebt",
+        "operatingCashflow", "freeCashflow", "grossMargins", "operatingMargins", "revenueGrowth",
+        "currentRatio", "bookValue", "beta")}
+    return fin

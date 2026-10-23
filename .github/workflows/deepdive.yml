@@ -1,0 +1,55 @@
+name: Deep dive
+
+on:
+  workflow_dispatch:
+    inputs:
+      code:
+        description: "Bursa stock code(s), e.g. 5161 or 5161,7113. Leave blank for the whole watchlist."
+        required: false
+        default: ""
+  schedule:
+    # Saturday 02:00 UTC = 10am Malaysia time: refresh the watchlist reports weekly
+    - cron: "0 2 * * 6"
+
+permissions:
+  contents: write # save reports/ back to the repo
+  actions: write # start the dashboard rebuild afterwards
+
+concurrency:
+  group: deepdive
+  cancel-in-progress: false
+
+jobs:
+  deepdive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Write report(s)
+        run: python -W ignore -m agent.deepdive $CODES
+        env:
+          CODES: ${{ inputs.code }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+      - name: Save reports to the repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add reports
+          git diff --cached --quiet || git commit -m "Deep-dive report update"
+          git pull --rebase
+          git push
+
+      - name: Rebuild the dashboard
+        run: gh workflow run daily.yml
+        env:
+          GH_TOKEN: ${{ github.token }}

@@ -1,6 +1,8 @@
 """Run the analysis for every stock in watchlist.json and write docs/index.html."""
 import json
 import math
+import os
+import shutil
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -11,6 +13,7 @@ from agent.macro import drivers_for, snapshot
 from agent.signals import overall, trend_signals, valuation_signals
 
 ROOT = Path(__file__).resolve().parent.parent
+WEB = ROOT / "agent" / "web"
 MYT = timezone(timedelta(hours=8))
 
 
@@ -95,17 +98,28 @@ def main():
     else:
         print("AI   skipped (no Gemini key; see agent/ai.py)")
 
+    docs = ROOT / "docs"
+    (docs / "reports").mkdir(parents=True, exist_ok=True)
+    for name in ("style.css", "common.js", "chat.js", "report.html"):
+        shutil.copy(WEB / name, docs / name)
+    reports = []
+    for path in sorted((ROOT / "reports").glob("*.json")):
+        shutil.copy(path, docs / "reports" / path.name)
+        r = json.loads(path.read_text())
+        reports.append({"code": r["code"], "name": r["name"], "short": r["short"], "generated": r.get("generated"),
+                        "stance": (r.get("report") or {}).get("verdict", {}).get("stance")})
+
     payload = {
         "generated": datetime.now(MYT).strftime("%Y-%m-%d %H:%M MYT"),
         "ai_enabled": ai.available(),
+        "repo": os.environ.get("GITHUB_REPOSITORY"),
         "market": market,
         "stocks": results,
+        "reports": reports,
     }
-    template = (ROOT / "agent" / "template.html").read_text()
-    out = ROOT / "docs" / "index.html"
-    out.parent.mkdir(exist_ok=True)
-    out.write_text(template.replace("__DATA__", json.dumps(payload).replace("</", "<\\/")))
-    print(f"Wrote {out}")
+    template = (WEB / "index.html").read_text()
+    (docs / "index.html").write_text(template.replace("__DATA__", json.dumps(payload).replace("</", "<\\/")))
+    print(f"Wrote {docs / 'index.html'} with {len(reports)} deep-dive report(s)")
 
 
 if __name__ == "__main__":

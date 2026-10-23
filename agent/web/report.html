@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deep-dive Report</title>
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"
+  integrity="sha384-JZigAjwiaZtkUbA44CWkPaT3iBb/mU5pO6QOANp+OqHd4q+1+7MG1kzp2OOP9ZfP" crossorigin="anonymous"></script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <p><a class="link" href="./">← Back to watchlist</a></p>
+  <div id="root"><p class="empty">Loading report…</p></div>
+  <p class="disclaimer">Financials from Yahoo Finance; qualitative facts from Google Search via Gemini. The AI's verdict and
+    fair values are estimates for research only, not financial advice. Verify against the company's annual report and Bursa filings.</p>
+</div>
+<script src="common.js"></script>
+<script src="chat.js"></script>
+<script>
+const code = new URLSearchParams(location.search).get("code") || "";
+
+const card = (title, body) => body ? `<section class="card"><h2 class="section-title">${title}</h2>${body}</section>` : "";
+const para = (label, text) => text ? `<p><span class="k">${label}:</span> ${esc(text)}</p>` : "";
+
+function finTable(rows, cols, labels) {
+  const periods = Object.keys(rows);
+  if (!periods.length) return "";
+  return `<div class="scroll"><table class="num"><thead><tr><th>RM</th>${periods.map((p) => `<th>${esc(p.slice(0, 7))}</th>`).join("")}</tr></thead><tbody>
+    ${cols.map((c, i) => `<tr><td>${labels[i]}</td>${periods.map((p) => {
+      const v = rows[p][c];
+      const shown = c === "eps" ? (v == null ? "–" : (v * 100).toFixed(2) + "sen") : big(v);
+      return `<td class="${v < 0 ? "down" : ""}">${shown}</td>`;
+    }).join("")}</tr>`).join("")}
+  </tbody></table></div>`;
+}
+
+function render(s) {
+  document.title = `${s.short} Deep-dive`;
+  const r = s.report || {};
+  const v = r.verdict || {}, b = r.business || {}, f = r.financial_health || {}, val = r.valuation || {};
+  const fin = s.financials || {};
+  const perf = s.performance || {};
+  const own = fin.ownership || {};
+
+  $("#root").innerHTML = `
+  <section class="card">
+    <div class="stock-head">
+      <h1 style="margin:0;font-size:24px">${esc(s.name)} <span class="sub">${esc(s.short)} · ${esc(s.code)}</span></h1>
+      <span class="price">RM ${fmt(s.close)}</span>
+    </div>
+    <div class="sub">${esc(s.sector)} · ${esc(s.industry)} · Market cap RM ${big(s.fundamentals?.market_cap)} · Report ${esc(s.generated)}</div>
+    <div class="sub">Performance: ${Object.entries(perf).map(([k, x]) => `${k} ${chg(x)}`).join(" · ") || "–"}</div>
+    ${s.report ? `
+    <div class="brief">
+      <div class="verdict"><span class="k">AI verdict</span>
+        <span class="badge ${esc(v.stance)}">${esc(v.stance)}</span>
+        <span class="sub">Conviction: ${esc(v.conviction)}</span></div>
+      <p class="lead" style="margin-top:8px">${esc(r.summary)}</p>
+      <p>${esc(v.summary)}</p>
+      ${para("Entry plan", v.entry_plan)}
+      ${para("Thesis breaks if", v.invalidation)}
+      <div class="tag">AI report · ${esc(r.model)}</div>
+    </div>` : `<p class="empty" style="margin-top:12px">The AI write-up failed for this report; the data below is still current.</p>`}
+  </section>
+
+  ${s.report ? card("The business", `<div class="kv">
+      ${para("What they do", b.what_they_do)}
+      ${b.segments?.length ? `<p class="k">Segments</p>${bullets(b.segments)}` : ""}
+      ${para("Customers & markets", b.customers_and_markets)}
+      ${para("Competition", b.competitive_position)}
+      ${para("Moat", b.moat)}
+      ${para("Management & ownership", r.management_and_ownership)}
+    </div>`) : ""}
+
+  ${card("Financials", `
+    ${s.report ? `<div class="kv">${para("Growth", f.growth)}${para("Profitability", f.profitability)}${para("Balance sheet", f.balance_sheet)}${para("Cash flow", f.cash_flow)}${para("Dividends", f.dividends)}</div>` : ""}
+    <h3 style="margin-top:14px">Last 5 quarters</h3>
+    ${finTable(fin.quarterly || {}, ["revenue", "gross_profit", "operating_income", "net_income", "eps"],
+      ["Revenue", "Gross profit", "Operating profit", "Net profit", "EPS"])}
+    <h3 style="margin-top:18px">Annual</h3>
+    ${finTable(fin.annual || {}, ["revenue", "gross_profit", "operating_income", "net_income", "eps", "cash", "total_debt", "equity", "operating_cf", "capex", "free_cf", "dividends_paid"],
+      ["Revenue", "Gross profit", "Operating profit", "Net profit", "EPS", "Cash", "Total debt", "Equity", "Operating cash flow", "Capex", "Free cash flow", "Dividends paid"])}
+    <div class="grid">
+      <div><h3>Ownership</h3><table>
+        <tr><td>Insiders</td><td>${pct(own.heldPercentInsiders)}</td></tr>
+        <tr><td>Institutions</td><td>${pct(own.heldPercentInstitutions)}</td></tr>
+      </table></div>
+      <div><h3>Key people</h3><table>${(fin.officers || []).map((o) => `<tr><td>${esc(o.name)}<div class="sub">${esc(o.title)}</div></td></tr>`).join("")}</table></div>
+    </div>`)}
+
+  ${s.report ? card("Valuation", `
+    <p>${esc(val.current)}</p>
+    ${val.scenarios?.length ? `<table><thead><tr><th>Case</th><th>Fair value (RM)</th><th>Assumptions</th></tr></thead><tbody>
+      ${val.scenarios.map((c) => `<tr><td><b>${esc(c.case)}</b></td><td>${esc(c.fair_value_rm)}</td><td class="sub">${esc(c.assumptions)}</td></tr>`).join("")}
+    </tbody></table>` : ""}`) : ""}
+
+  ${s.report ? card("Bull vs bear", `<div class="grid" style="margin-top:0">
+      <div><h3 class="up">Bull case</h3>${bullets(r.bull_case)}</div>
+      <div><h3 class="down">Bear case</h3>${bullets(r.bear_case)}</div>
+      <div><h3>Catalysts</h3>${bullets(r.catalysts)}</div>
+      <div><h3>Risks</h3>${bullets(r.risks)}</div>
+    </div>`) : ""}
+
+  <section class="card">
+    <h2 class="section-title">Price & technicals</h2>
+    <div class="chart" id="chart"></div>
+    ${CHART_LEGEND}
+    <div class="grid">
+      <div><h3>Trend & momentum <span class="badge ${s.trend.label}">${s.trend.label}</span></h3>${reasons(s.trend.reasons)}</div>
+      <div><h3>Key levels (RM)</h3><table>
+        <tr><td>3-month resistance</td><td>${fmt(s.levels.resistance_3m)}</td></tr>
+        <tr><td>3-month support</td><td>${fmt(s.levels.support_3m)}</td></tr>
+        <tr><td>200-day average</td><td>${fmt(s.levels.sma200)}</td></tr>
+        <tr><td>52-week range</td><td>${fmt(s.levels.low_52w)} – ${fmt(s.levels.high_52w)}</td></tr>
+      </table></div>
+    </div>
+  </section>
+
+  ${s.report ? card("Recent developments", bullets(r.recent_developments)) : ""}
+  ${card("News (90 days)", newsList(s.news))}
+  ${s.report ? card("Check these yourself before investing", bullets(r.verify_yourself)) : ""}
+  ${s.sources?.length ? card("Web sources used by the AI", `<ul class="news">${s.sources.map((x) =>
+      `<li><a href="${safeUrl(x.uri)}" target="_blank" rel="noopener">${esc(x.title || x.uri)}</a></li>`).join("")}</ul>`) : ""}
+
+  <section class="card" id="chat"></section>`;
+
+  drawChart($("#chart"), s);
+  StockChat.mount($("#chat"), {
+    name: s.short,
+    data: forAI(s),
+    suggestions: ["Summarise the bull and bear case in 3 lines", "Is the dividend sustainable?", "How does it compare with its competitors?"],
+  });
+}
+
+if (!/^[0-9A-Z]{4,6}$/.test(code)) {
+  $("#root").innerHTML = `<p class="empty">No report selected.</p>`;
+} else {
+  fetch(`reports/${code}.json`, { cache: "no-cache" })
+    .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then(render)
+    .catch(() => { $("#root").innerHTML = `<p class="empty">No deep-dive report for ${esc(code)} yet.</p>`; });
+}
+</script>
+</body>
+</html>
