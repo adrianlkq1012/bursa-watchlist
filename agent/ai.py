@@ -1,8 +1,8 @@
-"""AI-written briefs via GitHub Models (free tier, authenticated with a GitHub token).
+"""AI-written briefs via Google's Gemini API (free tier, key from aistudio.google.com).
 
-In GitHub Actions the built-in GITHUB_TOKEN is used automatically. Locally, put a
-fine-grained token with "Models: read" permission in a file named .github-token
-in the project folder (it is git-ignored), or set GITHUB_TOKEN.
+In GitHub Actions the key comes from the GEMINI_API_KEY repository secret. Locally,
+put the key in a file named .gemini-key in the project folder (it is git-ignored),
+or set GEMINI_API_KEY.
 """
 import json
 import os
@@ -10,9 +10,10 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-ENDPOINT = "https://models.github.ai/inference/chat/completions"
-MODELS = ["openai/gpt-4.1", "openai/gpt-4.1-mini"]  # fall back if the first is rate-limited
-TOKEN_FILE = Path(__file__).resolve().parent.parent / ".github-token"
+# Gemini's OpenAI-compatible endpoint
+ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+MODELS = ["gemini-flash-latest", "gemini-2.5-flash"]  # fall back if the first is unavailable
+TOKEN_FILE = Path(__file__).resolve().parent.parent / ".gemini-key"
 
 SYSTEM = """You are an equity research analyst covering Bursa Malaysia, writing for a
 mid-to-long-term investor (6-24 month horizon) who wants clear, precise, plain-English analysis.
@@ -42,8 +43,8 @@ MARKET_SCHEMA = """{
 
 
 def _token():
-    if os.environ.get("GITHUB_TOKEN"):
-        return os.environ["GITHUB_TOKEN"]
+    if os.environ.get("GEMINI_API_KEY"):
+        return os.environ["GEMINI_API_KEY"]
     if TOKEN_FILE.exists():
         return TOKEN_FILE.read_text().strip()
     return None
@@ -72,7 +73,6 @@ def _ask(task: str, data: dict):
             headers={
                 "Authorization": f"Bearer {token}",
                 "Content-Type": "application/json",
-                "Accept": "application/vnd.github+json",
             },
         )
         raw = b""

@@ -116,7 +116,7 @@ const newsList = (items) => items.length
       <div class="sub">${esc(n.source)} · ${n.date}</div></li>`).join("")}</ul>`
   : `<p class="empty">No headlines found.</p>`;
 const bullets = (xs) => xs && xs.length ? `<ul>${xs.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : "";
-const aiOff = `<p class="empty">AI brief is off: no GitHub token found. It turns on automatically in the GitHub cloud run.</p>`;
+const aiOff = `<p class="empty">AI brief is off: no Gemini key found. It runs in the GitHub cloud run once the key is added.</p>`;
 
 const M = DATA.market;
 $("#market").innerHTML = `

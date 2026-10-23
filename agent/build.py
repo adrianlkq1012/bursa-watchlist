@@ -86,13 +86,13 @@ def main():
     }
 
     if ai.available():
-        print("AI   writing briefs via GitHub Models")
+        print("AI   writing briefs via Gemini")
         market["brief"] = ai.market_brief(market, results)
         for s in results:
             s["brief"] = ai.stock_brief(s)
             print(f"AI   {s['short']}: {'ok' if s['brief'] else 'failed'}")
     else:
-        print("AI   skipped (no GitHub token; see agent/ai.py)")
+        print("AI   skipped (no Gemini key; see agent/ai.py)")
 
     payload = {
         "generated": datetime.now(MYT).strftime("%Y-%m-%d %H:%M MYT"),

@@ -10,7 +10,6 @@ permissions:
   contents: read
   pages: write
   id-token: write
-  models: read # free AI via GitHub Models
 
 concurrency:
   group: pages
@@ -33,7 +32,7 @@ jobs:
       - name: Build dashboard
         run: python -W ignore -m agent.build
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
       - uses: actions/configure-pages@v5
 
