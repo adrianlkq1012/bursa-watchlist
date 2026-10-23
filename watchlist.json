@@ -1,7 +1,112 @@
 {
   "stocks": [
-    {"code": "5238", "name": "AirAsia Group Berhad", "short": "AAGB"},
-    {"code": "6963", "name": "V.S. Industry Berhad", "short": "VS"},
-    {"code": "5161", "name": "JCY International Berhad", "short": "JCY"}
-  ]
+    {
+      "code": "5238",
+      "name": "AirAsia Group Berhad",
+      "short": "AAGB",
+      "news_query": "\"AirAsia\"",
+      "drivers": [
+        {
+          "ticker": "BZ=F",
+          "label": "Brent crude",
+          "effect": "negative",
+          "why": "Jet fuel is an airline's biggest cost"
+        },
+        {
+          "ticker": "MYR=X",
+          "label": "USD/MYR",
+          "effect": "negative",
+          "why": "Fuel, leases and debt are largely in USD"
+        }
+      ],
+      "news_match": [
+        "AirAsia",
+        "Capital A"
+      ]
+    },
+    {
+      "code": "6963",
+      "name": "V.S. Industry Berhad",
+      "short": "VS",
+      "news_query": "\"VS Industry\"",
+      "drivers": [
+        {
+          "ticker": "MYR=X",
+          "label": "USD/MYR",
+          "effect": "positive",
+          "why": "Exporter earning in USD (EMS for global brands)"
+        },
+        {
+          "ticker": "^GSPC",
+          "label": "S&P 500",
+          "effect": "positive",
+          "why": "Proxy for US consumer demand"
+        }
+      ],
+      "news_match": [
+        "VS Industry",
+        "V.S. Industry",
+        "V.S Industry",
+        "VSI"
+      ]
+    },
+    {
+      "code": "5161",
+      "name": "JCY International Berhad",
+      "short": "JCY",
+      "news_query": "\"JCY International\" OR \"JCY\"",
+      "drivers": [
+        {
+          "ticker": "STX",
+          "label": "Seagate",
+          "effect": "positive",
+          "why": "Hard-disk-drive customer demand"
+        },
+        {
+          "ticker": "WDC",
+          "label": "Western Digital",
+          "effect": "positive",
+          "why": "Hard-disk-drive customer demand"
+        },
+        {
+          "ticker": "MYR=X",
+          "label": "USD/MYR",
+          "effect": "positive",
+          "why": "Exporter earning in USD"
+        }
+      ],
+      "news_match": [
+        "JCY"
+      ]
+    }
+  ],
+  "market": {
+    "indicators": [
+      {
+        "ticker": "^KLSE",
+        "label": "FBM KLCI"
+      },
+      {
+        "ticker": "MYR=X",
+        "label": "USD/MYR"
+      },
+      {
+        "ticker": "BZ=F",
+        "label": "Brent crude (USD)"
+      },
+      {
+        "ticker": "^GSPC",
+        "label": "S&P 500"
+      },
+      {
+        "ticker": "^SOX",
+        "label": "Philadelphia Semiconductor"
+      }
+    ],
+    "news_queries": [
+      "\"Bursa Malaysia\"",
+      "\"Bank Negara\" OR ringgit",
+      "Malaysia economy"
+    ]
+  }
 }

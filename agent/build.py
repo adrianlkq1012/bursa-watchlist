@@ -4,8 +4,10 @@ import math
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
+from agent import ai, news
 from agent.data import fetch_fundamentals, fetch_prices
 from agent.indicators import add_indicators, key_levels
+from agent.macro import drivers_for, snapshot
 from agent.signals import overall, trend_signals, valuation_signals
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -47,6 +49,9 @@ def analyse(stock: dict) -> dict:
         ],
         "sma50": _line(chart, "SMA50"),
         "sma200": _line(chart, "SMA200"),
+        "drivers": drivers_for(stock),
+        "news": news.search(stock.get("news_query", f'"{stock["name"]}"'), days=30, limit=8,
+                            match=stock.get("news_match")),
     }
 
 
@@ -62,9 +67,9 @@ def _line(df, col):
 
 
 def main():
-    watchlist = json.loads((ROOT / "watchlist.json").read_text())["stocks"]
+    config = json.loads((ROOT / "watchlist.json").read_text())
     results = []
-    for s in watchlist:
+    for s in config["stocks"]:
         try:
             results.append(analyse(s))
             print(f"OK   {s['short']} ({s['code']})")
@@ -74,7 +79,27 @@ def main():
         # Fail loudly so the cloud run keeps the last good dashboard online
         raise SystemExit("No stocks could be analysed")
 
-    payload = {"generated": datetime.now(MYT).strftime("%Y-%m-%d %H:%M MYT"), "stocks": results}
+    mcfg = config.get("market", {})
+    market = {
+        "indicators": [{**m, **snapshot(m["ticker"])} for m in mcfg.get("indicators", [])],
+        "news": news.search_many(mcfg.get("news_queries", []), days=3, limit=10),
+    }
+
+    if ai.available():
+        print("AI   writing briefs via GitHub Models")
+        market["brief"] = ai.market_brief(market, results)
+        for s in results:
+            s["brief"] = ai.stock_brief(s)
+            print(f"AI   {s['short']}: {'ok' if s['brief'] else 'failed'}")
+    else:
+        print("AI   skipped (no GitHub token; see agent/ai.py)")
+
+    payload = {
+        "generated": datetime.now(MYT).strftime("%Y-%m-%d %H:%M MYT"),
+        "ai_enabled": ai.available(),
+        "market": market,
+        "stocks": results,
+    }
     template = (ROOT / "agent" / "template.html").read_text()
     out = ROOT / "docs" / "index.html"
     out.parent.mkdir(exist_ok=True)
