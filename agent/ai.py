@@ -116,7 +116,9 @@ def _ask_grounded(system: str, task: str, data: dict):
         "contents": [{"role": "user", "parts": [{"text": f"{task}\n\nDATA:\n{json.dumps(data, default=str)}"}]}],
         "generationConfig": {"temperature": 0.3},
     }
-    attempts = [(m, w, True) for m in MODELS for w in RETRY_WAITS] + [(MODELS[0], 10, False)]
+    # One try with Google Search (the free tier often has no search quota: HTTP 429),
+    # then the normal retries without it
+    attempts = [(MODELS[0], 0, True)] + [(m, w, False) for m in MODELS for w in RETRY_WAITS]
     for model, wait, search in attempts:
         if time.monotonic() - _started + wait > TIME_BUDGET:
             print("     AI time budget used up; skipping")

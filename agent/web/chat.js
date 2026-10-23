@@ -7,7 +7,7 @@ const StockChat = (() => {
   const SYSTEM = `You are an equity research assistant for a mid-to-long-term (6-24 month) investor in Bursa Malaysia stocks.
 Answer their questions clearly and precisely in plain English.
 - The DATA below is what their dashboard shows: use it first, and quote its numbers.
-- Use Google Search for anything newer or not in the DATA (company background, competitors, recent events), and say where it came from.
+- For anything newer or not in the DATA (company background, competitors, recent events): use Google Search if you have it and say where it came from; otherwise answer from general knowledge and say clearly that it may be out of date.
 - Never invent numbers. If you don't know, say so.
 - When asked whether to buy or sell, give a reasoned view with the key levels and risks, and remind them it is analysis, not financial advice.
 - Keep answers short: a few short paragraphs or bullets. Use **bold** for key points.`;
@@ -15,6 +15,7 @@ Answer their questions clearly and precisely in plain English.
   const getKey = () => { try { return localStorage.getItem(STORE) || ""; } catch { return ""; } };
   const setKey = (k) => { try { k ? localStorage.setItem(STORE, k) : localStorage.removeItem(STORE); } catch {} };
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  let searchOK = true;
 
   // Minimal markdown: paragraphs, bullets, numbered lists, headings, bold
   function md(text) {
@@ -49,7 +50,7 @@ Answer their questions clearly and precisely in plain English.
     };
     let last = "";
     for (const model of MODELS) {
-      for (const search of [true, false]) {
+      for (const search of searchOK ? [true, false] : [false]) {
         const body = search ? { ...base, tools: [{ google_search: {} }] } : base;
         for (const wait of [0, 5000]) {
           if (wait) await sleep(wait);
@@ -70,6 +71,8 @@ Answer their questions clearly and precisely in plain English.
           last = `${r.status}: ${(err.match(/"message":\s*"([^"]+)/) || [])[1] || err.slice(0, 150)}`;
           if (r.status === 400 && /api key/i.test(err)) throw new Error("BAD_KEY");
           if (r.status === 403) throw new Error("BAD_KEY");
+          // No Google Search quota on this key: stop asking for it
+          if (search && r.status === 429) { searchOK = false; break; }
           if (r.status !== 503 && r.status !== 429 && r.status !== 500) break;
         }
       }
