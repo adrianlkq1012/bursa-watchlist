@@ -1,0 +1,7 @@
+{
+  "stocks": [
+    {"code": "5238", "name": "AirAsia Group Berhad", "short": "AAGB"},
+    {"code": "6963", "name": "V.S. Industry Berhad", "short": "VS"},
+    {"code": "5161", "name": "JCY International Berhad", "short": "JCY"}
+  ]
+}
