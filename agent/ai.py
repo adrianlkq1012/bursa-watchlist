@@ -16,6 +16,8 @@ ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/openai/chat/complet
 # "-latest" aliases always point at Google's current models, so they don't get retired
 MODELS = ["gemini-flash-latest", "gemini-flash-lite-latest"]
 RETRY_WAITS = [0, 20, 60]  # seconds; free-tier models are often briefly overloaded (503)
+TIME_BUDGET = 12 * 60  # stop trying after this many seconds in total, so a bad day can't stall the run
+_started = time.monotonic()
 TOKEN_FILE = Path(__file__).resolve().parent.parent / ".gemini-key"
 
 SYSTEM = """You are an equity research analyst covering Bursa Malaysia, writing for a
@@ -70,6 +72,9 @@ def _ask(task: str, data: dict):
         "response_format": {"type": "json_object"},
     }
     for model, wait in ((m, w) for m in MODELS for w in RETRY_WAITS):
+        if time.monotonic() - _started + wait > TIME_BUDGET:
+            print("     AI time budget used up; skipping")
+            return None
         time.sleep(wait)
         req = urllib.request.Request(
             ENDPOINT,
@@ -81,7 +86,7 @@ def _ask(task: str, data: dict):
         )
         raw = b""
         try:
-            raw = urllib.request.urlopen(req, timeout=180).read()
+            raw = urllib.request.urlopen(req, timeout=90).read()
             content = json.loads(raw)["choices"][0]["message"]["content"].strip()
             # Some models wrap JSON in ```json fences despite response_format
             if content.startswith("```"):
