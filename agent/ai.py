@@ -75,15 +75,20 @@ def _ask(task: str, data: dict):
                 "Accept": "application/vnd.github+json",
             },
         )
+        raw = b""
         try:
-            resp = json.loads(urllib.request.urlopen(req, timeout=90).read())
-            out = json.loads(resp["choices"][0]["message"]["content"])
+            raw = urllib.request.urlopen(req, timeout=90).read()
+            content = json.loads(raw)["choices"][0]["message"]["content"].strip()
+            # Some models wrap JSON in ```json fences despite response_format
+            if content.startswith("```"):
+                content = content.split("\n", 1)[1].rsplit("```", 1)[0]
+            out = json.loads(content)
             out["model"] = model
             return out
         except urllib.error.HTTPError as e:
             print(f"     {model} failed: HTTP {e.code} {e.read()[:200]!r}")
         except Exception as e:
-            print(f"     {model} failed: {e}")
+            print(f"     {model} failed: {e} | response: {raw[:300]!r}")
     return None
 
 
