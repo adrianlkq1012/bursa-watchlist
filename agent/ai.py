@@ -6,13 +6,16 @@ or set GEMINI_API_KEY.
 """
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
 
 # Gemini's OpenAI-compatible endpoint
 ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
-MODELS = ["gemini-flash-latest", "gemini-2.5-flash"]  # fall back if the first is unavailable
+# "-latest" aliases always point at Google's current models, so they don't get retired
+MODELS = ["gemini-flash-latest", "gemini-flash-lite-latest"]
+RETRY_WAITS = [0, 20, 60]  # seconds; free-tier models are often briefly overloaded (503)
 TOKEN_FILE = Path(__file__).resolve().parent.parent / ".gemini-key"
 
 SYSTEM = """You are an equity research analyst covering Bursa Malaysia, writing for a
@@ -66,7 +69,8 @@ def _ask(task: str, data: dict):
         "temperature": 0.3,
         "response_format": {"type": "json_object"},
     }
-    for model in MODELS:
+    for model, wait in ((m, w) for m in MODELS for w in RETRY_WAITS):
+        time.sleep(wait)
         req = urllib.request.Request(
             ENDPOINT,
             data=json.dumps({**body, "model": model}).encode(),
@@ -77,7 +81,7 @@ def _ask(task: str, data: dict):
         )
         raw = b""
         try:
-            raw = urllib.request.urlopen(req, timeout=90).read()
+            raw = urllib.request.urlopen(req, timeout=180).read()
             content = json.loads(raw)["choices"][0]["message"]["content"].strip()
             # Some models wrap JSON in ```json fences despite response_format
             if content.startswith("```"):

@@ -88,6 +88,7 @@ def main():
     if ai.available():
         print("AI   writing briefs via Gemini")
         market["brief"] = ai.market_brief(market, results)
+        print(f"AI   market: {'ok' if market['brief'] else 'failed'}")
         for s in results:
             s["brief"] = ai.stock_brief(s)
             print(f"AI   {s['short']}: {'ok' if s['brief'] else 'failed'}")
