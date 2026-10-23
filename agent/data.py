@@ -101,7 +101,8 @@ def fetch_financials(code: str) -> dict:
         fin["ownership"][k] = info.get(k)
     fin["officers"] = [{"name": o.get("name"), "title": o.get("title")} for o in info.get("companyOfficers", [])[:6]]
     fin["profile"] = {k: info.get(k) for k in (
-        "fullTimeEmployees", "city", "country", "website", "sharesOutstanding", "totalCash", "totalDebt",
-        "operatingCashflow", "freeCashflow", "grossMargins", "operatingMargins", "revenueGrowth",
-        "currentRatio", "bookValue", "beta")}
+        "sector", "industry", "fullTimeEmployees", "city", "country", "website", "sharesOutstanding",
+        "totalCash", "totalDebt", "operatingCashflow", "freeCashflow", "grossMargins", "operatingMargins",
+        "profitMargins", "returnOnEquity", "debtToEquity", "revenueGrowth", "currentRatio", "bookValue", "beta")}
+    fin["summary"] = (info.get("longBusinessSummary") or "")[:1500]
     return fin

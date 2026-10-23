@@ -1,0 +1,7 @@
+{
+  "name": "bursa-relay",
+  "private": true,
+  "devDependencies": {
+    "wrangler": "4.149.0"
+  }
+}

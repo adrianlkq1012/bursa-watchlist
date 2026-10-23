@@ -93,3 +93,31 @@ a.link:hover { text-decoration: underline; }
 .scroll { overflow-x: auto; }
 .section-title { font-size: 18px; margin: 0 0 10px; }
 .kv p { margin: 0 0 10px; font-size: 14px; }
+
+/* Navigation and search */
+.topnav { display: flex; align-items: center; gap: 18px; max-width: 1100px; margin: 0 auto; padding: 14px 16px 0; flex-wrap: wrap; }
+.topnav a { color: var(--muted); text-decoration: none; font-weight: 600; font-size: 14px; }
+.topnav a.brand { color: var(--text); font-size: 16px; }
+.topnav a.on, .topnav a:hover { color: var(--accent); }
+.nav-search { margin-left: auto; width: min(320px, 100%); }
+.search { position: relative; }
+.search input { width: 100%; font: inherit; font-size: 16px; color: var(--text); background: var(--card);
+  border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; }
+.search input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.hero .search input { font-size: 17px; padding: 14px 18px; border-radius: 14px; }
+.results { position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 6px); background: var(--card);
+  border: 1px solid var(--line); border-radius: 12px; overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,.15); }
+.results a { display: flex; justify-content: space-between; gap: 12px; padding: 9px 14px; color: var(--text);
+  text-decoration: none; border-bottom: 1px solid var(--line); font-size: 14px; }
+.results a:last-child { border-bottom: 0; }
+.results a.sel, .results a:hover { background: var(--bg); }
+.results .r { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.hero { padding: 28px 0 8px; }
+.hero h1 { font-size: 30px; margin: 0 0 6px; }
+.hero p { color: var(--muted); margin: 0 0 16px; }
+.controls { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.controls select { font: inherit; font-size: 14px; color: var(--text); background: var(--bg); border: 1px solid var(--line);
+  border-radius: 8px; padding: 6px 10px; }
+.more { font: inherit; font-size: 14px; margin-top: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--accent);
+  border-radius: 8px; padding: 6px 14px; cursor: pointer; }
+td a.stock { color: var(--text); text-decoration: none; } td a.stock:hover { color: var(--accent); }

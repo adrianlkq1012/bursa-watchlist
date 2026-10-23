@@ -100,8 +100,10 @@ def main():
 
     docs = ROOT / "docs"
     (docs / "reports").mkdir(parents=True, exist_ok=True)
-    for name in ("style.css", "common.js", "chat.js", "report.html"):
+    for name in ("style.css", "common.js", "chat.js", "signals.js", "stock.html", "report.html"):
         shutil.copy(WEB / name, docs / name)
+    relay_url = os.environ.get("RELAY_URL") or (ROOT / "relay" / "url.txt").read_text().strip()
+    (docs / "config.js").write_text((WEB / "config.js").read_text().replace("__RELAY_URL__", relay_url.rstrip("/")))
     reports = []
     for path in sorted((ROOT / "reports").glob("*.json")):
         shutil.copy(path, docs / "reports" / path.name)
@@ -117,9 +119,16 @@ def main():
         "stocks": results,
         "reports": reports,
     }
-    template = (WEB / "index.html").read_text()
-    (docs / "index.html").write_text(template.replace("__DATA__", json.dumps(payload).replace("</", "<\\/")))
-    print(f"Wrote {docs / 'index.html'} with {len(reports)} deep-dive report(s)")
+    home = {
+        "generated": payload["generated"], "repo": payload["repo"], "reports": reports,
+        "market": {"indicators": market["indicators"], "brief": market.get("brief")},
+        "watchlist": [{"code": s["code"], "short": s["short"], "close": s["close"], "change_pct": s["change_pct"],
+                       "stance": (s.get("brief") or {}).get("stance")} for s in results],
+    }
+    for page, data in (("index.html", home), ("watchlist.html", payload)):
+        html = (WEB / page).read_text().replace("__DATA__", json.dumps(data).replace("</", "<\\/"))
+        (docs / page).write_text(html)
+    print(f"Wrote home and watchlist pages with {len(reports)} deep-dive report(s)")
 
 
 if __name__ == "__main__":

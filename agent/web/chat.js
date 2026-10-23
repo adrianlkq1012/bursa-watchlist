@@ -81,7 +81,8 @@ Answer their questions clearly and precisely in plain English.
   }
 
   function mount(el, { name, data, suggestions = [] }) {
-    const system = `${SYSTEM}\n\nDATA (${name}):\n${JSON.stringify(data)}`;
+    // data may be a function so answers use whatever the page has loaded by then
+    const system = () => `${SYSTEM}\n\nDATA (${name}):\n${JSON.stringify(typeof data === "function" ? data() : data)}`;
     const history = [];
     el.classList.add("chat");
     el.innerHTML = `
@@ -123,7 +124,7 @@ Answer their questions clearly and precisely in plain English.
       history.push({ role: "user", parts: [{ text: q }] });
       const wait = add("bot", `<p class="empty">Thinking…</p>`);
       try {
-        const a = await ask(key, system, history);
+        const a = await ask(key, system(), history);
         history.push({ role: "model", parts: [{ text: a.text }] });
         const src = a.sources.length
           ? `<div class="sub">Sources: ${a.sources.slice(0, 5).map((s) => `<a href="${safeUrl(s.uri)}" target="_blank" rel="noopener">${esc(s.title || "link")}</a>`).join(" · ")}</div>`

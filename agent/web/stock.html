@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stock</title>
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"
+  integrity="sha384-JZigAjwiaZtkUbA44CWkPaT3iBb/mU5pO6QOANp+OqHd4q+1+7MG1kzp2OOP9ZfP" crossorigin="anonymous"></script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <div id="root"><p class="empty">Loading…</p></div>
+  <p class="disclaimer">Prices and financials from Yahoo Finance (delayed). AI verdicts and fair values are estimates for research only,
+    not financial advice. Verify against the company's annual report and Bursa filings.</p>
+</div>
+<script src="config.js"></script>
+<script src="common.js"></script>
+<script src="signals.js"></script>
+<script src="chat.js"></script>
+<script>
+mountNav("stock");
+const code = (new URLSearchParams(location.search).get("code") || "").toUpperCase();
+
+const card = (title, body) => body ? `<section class="card"><h2 class="section-title">${title}</h2>${body}</section>` : "";
+const para = (label, text) => text ? `<p><span class="k">${label}:</span> ${esc(text)}</p>` : "";
+const getJSON = (url) => fetch(url, { cache: "no-cache" }).then((r) => r.ok ? r.json() : null).catch(() => null);
+
+function finTable(rows, cols, labels) {
+  const periods = Object.keys(rows || {});
+  if (!periods.length) return `<p class="empty">Not available.</p>`;
+  return `<div class="scroll"><table class="num"><thead><tr><th>RM</th>${periods.map((p) => `<th>${esc(p.slice(0, 7))}</th>`).join("")}</tr></thead><tbody>
+    ${cols.map((c, i) => `<tr><td>${labels[i]}</td>${periods.map((p) => {
+      const v = rows[p][c];
+      const shown = c === "eps" ? (v == null ? "–" : (v * 100).toFixed(2) + "sen") : big(v);
+      return `<td class="${v < 0 ? "down" : ""}">${shown}</td>`;
+    }).join("")}</tr>`).join("")}
+  </tbody></table></div>`;
+}
+
+function render(s, rep) {
+  document.title = `${s.short} · Bursa Research`;
+  const r = rep?.report, v = r?.verdict || {}, b = r?.business || {}, f = r?.financial_health || {}, val = r?.valuation || {};
+  const fin = s.financials || rep?.financials || {};
+  if (!fin.summary && rep?.summary) fin.summary = rep.summary;
+  const F = s.fundamentals || {}, L = s.levels, own = fin.ownership || {};
+  const newsUrl = `https://news.google.com/search?q=${encodeURIComponent('"' + s.name.replace(/\s+Berhad$/i, "") + '"')}&hl=en-MY&gl=MY&ceid=MY:en`;
+
+  $("#root").innerHTML = `
+  <section class="card">
+    <div class="stock-head">
+      <h1 style="margin:0;font-size:24px">${esc(s.name)} <span class="sub">${esc(s.short)} · ${esc(s.code)}</span></h1>
+      <span class="price">RM ${fmt(s.close)}</span>
+      ${s.change_pct == null ? "" : chg(s.change_pct)}
+      <span class="badge ${esc(s.rating)}">${esc(s.rating)}</span>
+    </div>
+    <div class="sub">${[s.sector, s.industry].filter(Boolean).map(esc).join(" · ") || "Sector not available"} · Market cap RM ${big(F.market_cap)}
+      ${s.change_52w == null ? "" : ` · 1 year ${chg(s.change_52w)}`} · Prices as of ${esc(s.as_of || "–")}</div>
+    ${r ? `
+    <div class="brief">
+      <div class="verdict"><span class="k">AI deep-dive verdict</span>
+        <span class="badge ${esc(v.stance)}">${esc(v.stance)}</span>
+        <span class="sub">Conviction: ${esc(v.conviction)} · Report ${esc(rep.generated)}</span></div>
+      <p class="lead" style="margin-top:8px">${esc(r.summary)}</p>
+      <p>${esc(v.summary)}</p>
+      ${para("Entry plan", v.entry_plan)}
+      ${para("Thesis breaks if", v.invalidation)}
+      <div class="tag">AI report · ${esc(r.model)}</div>
+    </div>` : `
+    <div class="brief">
+      <p style="margin:0">No saved AI deep-dive for this stock yet.
+        <a class="link" href="#chat" id="ask-full">Ask the AI for a full analysis →</a></p>
+    </div>`}
+  </section>
+
+  ${card("The business", r ? `<div class="kv">
+      ${para("What they do", b.what_they_do)}
+      ${b.segments?.length ? `<p class="k">Segments</p>${bullets(b.segments)}` : ""}
+      ${para("Customers & markets", b.customers_and_markets)}
+      ${para("Competition", b.competitive_position)}
+      ${para("Moat", b.moat)}
+      ${para("Management & ownership", r.management_and_ownership)}
+    </div>` : (s.summary || fin.summary ? `<p style="font-size:14px">${esc(s.summary || fin.summary)}</p>` : ""))}
+
+  <section class="card">
+    <h2 class="section-title">Valuation & signals</h2>
+    <div class="grid" style="margin-top:0">
+      <div><h3>Key ratios</h3><table>
+        <tr><td>P/E (trailing)</td><td>${fmt(F.pe, 1)}</td></tr>
+        <tr><td>P/B</td><td>${fmt(F.pb, 2)}</td></tr>
+        <tr><td>Dividend yield</td><td>${F.dividend_yield ? fmt(F.dividend_yield, 2) + "%" : "–"}</td></tr>
+        <tr><td>EPS (12 months)</td><td>${F.eps == null ? "–" : (F.eps * 100).toFixed(2) + " sen"}</td></tr>
+        <tr><td>ROE</td><td>${pct(F.roe)}</td></tr>
+        <tr><td>Profit margin</td><td>${pct(F.profit_margin)}</td></tr>
+        <tr><td>Debt / equity</td><td>${F.debt_to_equity == null ? "–" : fmt(F.debt_to_equity, 0) + "%"}</td></tr>
+      </table></div>
+      <div><h3>Valuation <span class="badge ${s.valuation.label}">${s.valuation.label}</span></h3>${reasons(s.valuation.reasons)}</div>
+    </div>
+    ${r ? `<h3 style="margin-top:16px">AI fair-value scenarios</h3><p style="font-size:14px">${esc(val.current)}</p>
+      ${val.scenarios?.length ? `<table><thead><tr><th>Case</th><th>Fair value (RM)</th><th>Assumptions</th></tr></thead><tbody>
+        ${val.scenarios.map((c) => `<tr><td><b>${esc(c.case)}</b></td><td>${esc(c.fair_value_rm)}</td><td class="sub">${esc(c.assumptions)}</td></tr>`).join("")}
+      </tbody></table>` : ""}` : ""}
+  </section>
+
+  <section class="card">
+    <h2 class="section-title">Price & technicals</h2>
+    <div class="chart" id="chart"></div>
+    ${CHART_LEGEND}
+    ${s.trend ? `<div class="grid">
+      <div><h3>Trend & momentum <span class="badge ${s.trend.label}">${s.trend.label}</span></h3>${reasons(s.trend.reasons)}</div>
+      <div><h3>Key levels (RM)</h3><table>
+        <tr><td>3-month resistance</td><td>${fmt(L.resistance_3m)}</td></tr>
+        <tr><td>3-month support</td><td>${fmt(L.support_3m)}</td></tr>
+        <tr><td>50-day average</td><td>${fmt(L.sma50)}</td></tr>
+        <tr><td>200-day average</td><td>${fmt(L.sma200)}</td></tr>
+        <tr><td>52-week range</td><td>${fmt(L.low_52w)} – ${fmt(L.high_52w)}</td></tr>
+        <tr><td>RSI (14)</td><td>${fmt(s.indicators?.rsi, 0)}</td></tr>
+      </table></div>
+    </div>` : `<p class="empty">Not enough trading history for technical signals.</p>`}
+  </section>
+
+  ${card("Financials", `
+    ${r ? `<div class="kv">${para("Growth", f.growth)}${para("Profitability", f.profitability)}${para("Balance sheet", f.balance_sheet)}${para("Cash flow", f.cash_flow)}${para("Dividends", f.dividends)}</div>` : ""}
+    <h3 style="margin-top:14px">Recent quarters</h3>
+    ${finTable(fin.quarterly, ["revenue", "gross_profit", "operating_income", "net_income", "eps"],
+      ["Revenue", "Gross profit", "Operating profit", "Net profit", "EPS"])}
+    <h3 style="margin-top:18px">Annual</h3>
+    ${finTable(fin.annual, ["revenue", "gross_profit", "operating_income", "net_income", "eps", "cash", "total_debt", "equity", "operating_cf", "capex", "free_cf", "dividends_paid"],
+      ["Revenue", "Gross profit", "Operating profit", "Net profit", "EPS", "Cash", "Total debt", "Equity", "Operating cash flow", "Capex", "Free cash flow", "Dividends paid"])}
+    <div class="grid">
+      <div><h3>Ownership</h3><table>
+        <tr><td>Insiders</td><td>${pct(own.heldPercentInsiders)}</td></tr>
+        <tr><td>Institutions</td><td>${pct(own.heldPercentInstitutions)}</td></tr>
+      </table></div>
+      <div><h3>Key people</h3>${(fin.officers || []).length ? `<table>${fin.officers.map((o) => `<tr><td>${esc(o.name)}<div class="sub">${esc(o.title)}</div></td></tr>`).join("")}</table>` : `<p class="empty">Not available.</p>`}</div>
+    </div>`)}
+
+  ${r ? card("Bull vs bear", `<div class="grid" style="margin-top:0">
+      <div><h3 class="up">Bull case</h3>${bullets(r.bull_case)}</div>
+      <div><h3 class="down">Bear case</h3>${bullets(r.bear_case)}</div>
+      <div><h3>Catalysts</h3>${bullets(r.catalysts)}</div>
+      <div><h3>Risks</h3>${bullets(r.risks)}</div>
+    </div>`) : ""}
+
+  ${r ? card("Recent developments", bullets(r.recent_developments)) : ""}
+  ${card("News (90 days)", `<div id="news"><p class="empty">Loading latest news…</p></div>
+    <p style="margin:10px 0 0"><a class="link" href="${newsUrl}" target="_blank" rel="noopener">More ${esc(s.short)} news on Google News →</a></p>`)}
+  ${r ? card("Check these yourself before investing", bullets(r.verify_yourself)) : ""}
+  ${rep?.sources?.length ? card("Web sources used by the AI", `<ul class="news">${rep.sources.map((x) =>
+      `<li><a href="${safeUrl(x.uri)}" target="_blank" rel="noopener">${esc(x.title || x.uri)}</a></li>`).join("")}</ul>`) : ""}
+
+  <section class="card" id="chat"></section>`;
+
+  drawChart($("#chart"), s);
+  let latestNews = rep?.news || [];
+  const query = '"' + s.name.replace(/\s+(Berhad|Bhd\.?)$/i, "") + '"';
+  relay(`/news?q=${encodeURIComponent(query)}`)
+    .then((items) => {
+      // Live headlines plus any from the saved deep-dive, newest first, no repeats
+      const seen = new Set();
+      latestNews = [...items, ...(rep?.news || [])]
+        .filter((n) => { const k = n.title.toLowerCase().slice(0, 50); return !seen.has(k) && seen.add(k); })
+        .sort((a, b) => b.date.localeCompare(a.date)).slice(0, 15);
+    })
+    .catch(() => {})
+    .finally(() => { $("#news").innerHTML = newsList(latestNews); });
+
+  StockChat.mount($("#chat"), {
+    name: s.short,
+    data: () => ({ ...forAI(s), news: latestNews.map((n) => `${n.date} | ${n.source} | ${n.title}`),
+      deep_dive: rep ? rep.report : null }),
+    suggestions: r
+      ? ["Summarise the bull and bear case in 3 lines", "Is the dividend sustainable?", "What changed in the latest quarter?"]
+      : ["Write me a full due-diligence analysis", "Is this a good long-term investment?", "Explain the latest results simply"],
+  });
+  $("#ask-full")?.addEventListener("click", () => setTimeout(() => $("#chat .chip")?.click(), 300));
+}
+
+if (!/^[0-9A-Z]{4,6}$/.test(code)) {
+  $("#root").innerHTML = `<p class="empty">No stock selected. Use the search above.</p>`;
+} else {
+  $("#root").innerHTML = `<p class="empty">Fetching live data for ${esc(code)}…</p>`;
+  Promise.all([relay(`/stock/${code}`).catch((e) => ({ error: e.message })), getJSON(`reports/${code}.json`)]).then(([live, rep]) => {
+    if (live.error && !rep) {
+      $("#root").innerHTML = `<p class="empty">Couldn't load ${esc(code)} (${esc(live.error)}). Check the code, or try again in a minute.</p>`;
+      return;
+    }
+    // Live data first; a saved deep-dive fills in if the live fetch failed
+    const s = live.error ? rep : { ...live, ...analyse(live.candles, live.volumes, live.fundamentals) };
+    render(s, rep);
+  });
+}
+</script>
+</body>
+</html>
