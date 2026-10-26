@@ -17,6 +17,7 @@
 <script src="config.js"></script>
 <script src="common.js"></script>
 <script src="signals.js"></script>
+<script src="trading.js"></script>
 <script src="chat.js"></script>
 <script>
 mountNav("stock");
@@ -73,6 +74,8 @@ function render(s, rep) {
     </div>`}
   </section>
 
+  <section class="card" id="trade"></section>
+
   ${card("The business", r ? `<div class="kv">
       ${para("What they do", b.what_they_do)}
       ${b.segments?.length ? `<p class="k">Segments</p>${bullets(b.segments)}` : ""}
@@ -103,9 +106,7 @@ function render(s, rep) {
   </section>
 
   <section class="card">
-    <h2 class="section-title">Price & technicals</h2>
-    <div class="chart" id="chart"></div>
-    ${CHART_LEGEND}
+    <h2 class="section-title">Technicals</h2>
     ${s.trend ? `<div class="grid">
       <div><h3>Trend & momentum <span class="badge ${s.trend.label}">${s.trend.label}</span></h3>${reasons(s.trend.reasons)}</div>
       <div><h3>Key levels (RM)</h3><table>
@@ -151,7 +152,8 @@ function render(s, rep) {
 
   <section class="card" id="chat"></section>`;
 
-  drawChart($("#chart"), s);
+  renderTrade(s);
+  if (location.hash === "#trade") $("#trade").scrollIntoView();
   let latestNews = rep?.news || [];
   const query = '"' + s.name.replace(/\s+(Berhad|Bhd\.?)$/i, "") + '"';
   relay(`/news?q=${encodeURIComponent(query)}`)
@@ -167,13 +169,148 @@ function render(s, rep) {
 
   StockChat.mount($("#chat"), {
     name: s.short,
-    data: () => ({ ...forAI(s), news: latestNews.map((n) => `${n.date} | ${n.source} | ${n.title}`),
+    data: () => ({ ...forAI(s), trading_setups: { swing: trade.swing?.plan, swing_trend: trade.swing?.trend, day: trade.day?.plan }, news: latestNews.map((n) => `${n.date} | ${n.source} | ${n.title}`),
       deep_dive: rep ? rep.report : null }),
     suggestions: r
       ? ["Summarise the bull and bear case in 3 lines", "Is the dividend sustainable?", "What changed in the latest quarter?"]
       : ["Write me a full due-diligence analysis", "Is this a good long-term investment?", "Explain the latest results simply"],
   });
   $("#ask-full")?.addEventListener("click", () => setTimeout(() => $("#chat .chip")?.click(), 300));
+}
+
+// ---- Trading setups panel ----
+const LINE = { entry: "#2457c5", stop: "#c0392b", tp: "#1a7f4b", sup: "#8a94a0", res: "#8a94a0", piv: "#b08a2e" };
+let trade = { tab: "swing", swing: null, day: null, dayErr: null, s: null };
+
+function planTable(p) {
+  const pctFrom = (x) => `<span class="sub">${x >= p.entry ? "+" : ""}${((x / p.entry - 1) * 100).toFixed(1)}%</span>`;
+  return `<table class="plan">
+    <tr><td><span class="dot" style="background:${LINE.entry}"></span>Entry</td><td><b>${fmt(p.entry)}</b></td><td></td></tr>
+    <tr><td><span class="dot" style="background:${LINE.stop}"></span>Stop loss</td><td><b class="down">${fmt(p.stop)}</b></td><td>${pctFrom(p.stop)}</td></tr>
+    <tr><td><span class="dot" style="background:${LINE.tp}"></span>Take profit 1</td><td><b class="up">${fmt(p.tp1)}</b></td><td>${pctFrom(p.tp1)}</td></tr>
+    <tr><td><span class="dot" style="background:${LINE.tp}"></span>Take profit 2</td><td><b class="up">${fmt(p.tp2)}</b></td><td>${pctFrom(p.tp2)}</td></tr>
+    <tr><td>Reward : risk (to TP1)</td><td><b class="${p.good ? "up" : "down"}">${p.rr.toFixed(1)} : 1</b></td><td></td></tr>
+  </table>`;
+}
+
+function sizer(p) {
+  return `<div class="sizer">
+    <label>Max loss I accept on this trade (RM)
+      <input type="number" min="0" step="50" value="${localGet("riskRM") || 200}" id="riskRM" inputmode="decimal"></label>
+    <div id="sizeOut" class="sub"></div>
+  </div>`;
+}
+const localGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+const localSet = (k, v) => { try { localStorage.setItem(k, v); } catch {} };
+
+function updateSize(p) {
+  const r = +$("#riskRM").value;
+  localSet("riskRM", r);
+  const z = positionSize(r, p.entry, p.stop);
+  $("#sizeOut").innerHTML = !z ? "" : z.lots < 1
+    ? `Even 1 lot (100 shares) would risk RM ${fmt((p.entry - p.stop) * 100, 2)}, more than your limit.`
+    : `Buy <b>${z.lots} lot${z.lots > 1 ? "s" : ""}</b> (${z.shares.toLocaleString()} shares) ≈ RM ${z.cost.toLocaleString(undefined, { maximumFractionDigits: 0 })}.
+       If the stop loss is hit you lose about RM ${z.loss.toFixed(0)}; at TP1 you gain about RM ${((p.tp1 - p.entry) * z.shares).toFixed(0)}. Excludes brokerage and stamp duty.`;
+}
+
+function levelList(sw) {
+  const li = (l) => `<li>${fmt(l.price)} <span class="sub">· ${l.touches} touch${l.touches > 1 ? "es" : ""}, last ${esc(l.last)}</span></li>`;
+  return `<div class="grid" style="margin-top:10px">
+    <div><h3>Resistance above</h3>${sw.resistances.length ? `<ul class="lv">${sw.resistances.map(li).join("")}</ul>` : `<p class="empty">None: price is at its highest level in a year.</p>`}</div>
+    <div><h3>Support below</h3>${sw.supports.length ? `<ul class="lv">${sw.supports.map(li).join("")}</ul>` : `<p class="empty">None: price is at its lowest level in a year.</p>`}</div>
+  </div>`;
+}
+
+function renderTrade(s) {
+  trade.s = s;
+  const vols = s.volumes || s.candles.map(() => 0);
+  try { trade.swing = s.candles.length >= 60 ? swingSetup(s.candles.map((c) => Array.isArray(c) ? c : [c.time, c.open, c.high, c.low, c.close]), vols) : null; }
+  catch (e) { trade.swing = null; }
+  drawTrade();
+  relay(`/intraday/${s.code}`).then((d) => {
+    trade.day = daySetup(d.candles, d.volumes);
+    trade.dayBars = d;
+    if (!trade.day) trade.dayErr = "Not enough intraday trading yet.";
+  }).catch((e) => { trade.dayErr = e.message; }).finally(() => { if (trade.tab === "day") drawTrade(); });
+}
+
+function drawTrade() {
+  const { tab, swing, day, s } = trade;
+  const isDay = tab === "day";
+  const setup = isDay ? day : swing;
+  const p = setup?.plan;
+  const head = `
+    <div class="stock-head" style="justify-content:space-between">
+      <h2 class="section-title" style="margin:0">Trading setup</h2>
+      <div class="tabs">
+        <button data-tab="swing" class="${!isDay ? "on" : ""}">Swing <span class="sub">days–weeks</span></button>
+        <button data-tab="day" class="${isDay ? "on" : ""}">Day trade <span class="sub">15-min</span></button>
+      </div>
+    </div>`;
+
+  let body;
+  if (!setup) {
+    body = `<p class="empty">${isDay ? (trade.dayErr ? `Intraday data unavailable (${esc(trade.dayErr)}).` : "Loading intraday data…") : "Not enough price history for a setup."}</p>`;
+  } else {
+    const ctx = isDay
+      ? `Session ${esc(setup.session)} · last ${fmt(setup.last)} · VWAP ${fmt(setup.vwap)} · pivot ${fmt(setup.pivots.P)} · first-30-min range ${fmt(setup.orl)}–${fmt(setup.orh)}`
+      : `Trend: <b>${esc(setup.trend)}</b> · daily ATR ${fmt(setup.atr)} (typical daily move) · volume today ${setup.volRatio.toFixed(1)}× normal`;
+    body = `
+      <p class="sub" style="margin:8px 0 0">${ctx}</p>
+      <div class="brief">
+        <div class="verdict"><span class="badge ${p.bias === "Bullish" ? "Positive" : p.bias === "Bearish" ? "Negative" : "Mixed"}">${esc(p.bias)}</span>
+          <b>${esc(p.name)}</b></div>
+        <p style="margin-top:8px">${esc(p.why)}</p>
+        ${p.warning ? `<p class="down">⚠ ${esc(p.warning)}</p>` : ""}
+        ${!p.good ? `<p class="down">⚠ Reward : risk is only ${p.rr.toFixed(1)} : 1 (want at least 1.5). The target is too close to justify the risk; most traders would skip this one.</p>` : ""}
+      </div>
+      <div class="grid" style="margin-top:14px">
+        <div>${planTable(p)}</div>
+        <div>${sizer(p)}</div>
+      </div>
+      <div class="chart" id="tchart"></div>
+      <div class="legend">
+        <span><i style="background:${LINE.entry}"></i>Entry</span><span><i style="background:${LINE.stop}"></i>Stop</span>
+        <span><i style="background:${LINE.tp}"></i>Targets</span><span><i style="background:${LINE.sup}"></i>Support / resistance</span>
+        ${isDay ? `<span><i style="background:#2bb3c0"></i>VWAP</span><span><i style="background:${LINE.piv}"></i>Pivots</span>` : `<span><i style="background:#f0a020"></i>50-day</span><span><i style="background:#7b61ff"></i>200-day</span>`}
+      </div>
+      ${isDay ? "" : levelList(setup)}
+      <details><summary>How these levels are worked out</summary><p>
+        ${isDay
+          ? "Pivots come from yesterday's high, low and close (classic floor-trader pivots). VWAP is today's volume-weighted average price: above it buyers are winning, below it sellers are. Stops sit under VWAP or the first-30-minute low, and at least half a 15-minute ATR away so normal noise doesn't trigger them."
+          : "Support and resistance are prices where the stock turned around before (swing highs and lows over the last year), grouped when close together; more touches means a stronger level. Stops sit about one ATR (the stock's typical daily move) beyond the level, so ordinary noise doesn't stop you out. Targets are the next resistance levels; if those are unrealistically far, the first target is 2× the risk."}
+        All prices are rounded to Bursa tick sizes. Long trades only, since short selling is restricted for most retail investors.</p></details>
+      <p class="sub" style="margin-top:10px">Rule-based setup generated from price data. It is not financial advice and levels can fail; never risk money you can't afford to lose.</p>`;
+  }
+  $("#trade").innerHTML = head + body;
+  $("#trade").querySelectorAll(".tabs button").forEach((b) => b.addEventListener("click", () => { trade.tab = b.dataset.tab; drawTrade(); }));
+  if (!setup) return;
+  $("#riskRM").addEventListener("input", () => updateSize(p));
+  updateSize(p);
+
+  const planLines = [
+    { price: p.entry, color: LINE.entry, title: "Entry" },
+    { price: p.stop, color: LINE.stop, title: "Stop" },
+    { price: p.tp1, color: LINE.tp, title: "TP1" },
+    { price: p.tp2, color: LINE.tp, title: "TP2", dashed: true },
+  ];
+  if (isDay) {
+    const d = trade.dayBars, P = setup.pivots;
+    const sessionStart = d.candles.findIndex((c) => new Date(c[0] * 1000).toISOString().slice(0, 10) === setup.session);
+    let pv = 0, vv = 0;
+    const vwapLine = d.candles.slice(sessionStart).map((c, i) => {
+      pv += ((c[2] + c[3] + c[4]) / 3) * d.volumes[sessionStart + i]; vv += d.volumes[sessionStart + i];
+      return { time: c[0], value: vv ? pv / vv : c[4] };
+    });
+    drawChart($("#tchart"), { candles: d.candles }, { intraday: true, vwap: vwapLine, show: 80, lines: [
+      ...planLines,
+      { price: P.R1, color: LINE.piv, title: "R1", dashed: true }, { price: P.S1, color: LINE.piv, title: "S1", dashed: true },
+      { price: P.P, color: LINE.piv, title: "Pivot", dashed: true },
+    ] });
+  } else {
+    const sr = [...setup.supports.slice(0, 2), ...setup.resistances.slice(0, 2)].map((l) => ({ price: l.price, color: LINE.sup, dashed: true, title: l.type === "support" ? "S" : "R" }));
+    drawChart($("#tchart"), s, { lines: [...sr, ...planLines], show: 130 });
+  }
 }
 
 if (!/^[0-9A-Z]{4,6}$/.test(code)) {

@@ -86,7 +86,8 @@ $("#stocks").innerHTML = DATA.stocks.map((s) => {
       <span class="badge ${s.rating}">${s.rating}</span>
     </div>
     <div class="sub">${esc(s.sector)} · ${esc(s.industry)} · Market cap RM ${big(F.market_cap)}</div>
-    ${rep ? `<p style="margin:10px 0 0"><a class="link" href="stock.html?code=${s.code}">Full deep-dive report →</a> <span class="sub">${esc(rep.generated)}</span></p>` : ""}
+    <p style="margin:10px 0 0"><a class="link" href="stock.html?code=${s.code}#trade">Trading setup: entry, stop & targets →</a>
+      ${rep ? `<br><a class="link" href="stock.html?code=${s.code}">Full deep-dive report →</a> <span class="sub">${esc(rep.generated)}</span>` : ""}</p>
     ${stockBrief(s.brief)}
     <div class="chart" id="c-${s.code}"></div>
     ${CHART_LEGEND}

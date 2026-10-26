@@ -29,7 +29,10 @@ const forAI = (s) => {
 const asCandles = (xs) => (xs || []).map((c) => Array.isArray(c) ? { time: c[0], open: c[1], high: c[2], low: c[3], close: c[4] } : c);
 const asLine = (xs) => (xs || []).map((p) => Array.isArray(p) ? { time: p[0], value: p[1] } : p);
 
-function drawChart(el, s) {
+// lines: horizontal price lines, e.g. [{ price, color, title, dashed }]
+// intraday: candle times are unix seconds; shows clock times and a VWAP line if given
+function drawChart(el, s, { lines = [], intraday = false, vwap = null, show = 260 } = {}) {
+  el.innerHTML = "";
   if (!window.LightweightCharts) { el.textContent = "Chart library failed to load (offline?)."; return; }
   const candles = asCandles(s.candles);
   if (!candles.length) { el.textContent = "No price history available."; return; }
@@ -40,16 +43,27 @@ function drawChart(el, s) {
     autoSize: true,
     layout: { background: { color: "transparent" }, textColor: v("--muted") },
     grid: { vertLines: { visible: false }, horzLines: { color: v("--line") } },
-    rightPriceScale: { borderVisible: false }, timeScale: { borderVisible: false },
+    rightPriceScale: { borderVisible: false }, timeScale: { borderVisible: false, timeVisible: intraday },
   });
-  chart.addCandlestickSeries({
+  const series = chart.addCandlestickSeries({
     upColor: v("--pos"), downColor: v("--neg"), wickUpColor: v("--pos"), wickDownColor: v("--neg"),
     borderVisible: false, priceFormat: { type: "price", precision: 3, minMove: 0.005 },
-  }).setData(s.candles);
-  chart.addLineSeries({ color: "#f0a020", lineWidth: 2, priceLineVisible: false, lastValueVisible: false }).setData(s.sma50);
-  chart.addLineSeries({ color: "#7b61ff", lineWidth: 2, priceLineVisible: false, lastValueVisible: false }).setData(s.sma200);
-  const from = s.candles[Math.max(0, s.candles.length - 260)].time;
-  chart.timeScale().setVisibleRange({ from, to: s.candles[s.candles.length - 1].time });
+  });
+  series.setData(s.candles);
+  const line = (data, color) => data.length && chart.addLineSeries({ color, lineWidth: 2, priceLineVisible: false, lastValueVisible: false }).setData(data);
+  line(s.sma50, "#f0a020");
+  line(s.sma200, "#7b61ff");
+  if (vwap) line(vwap, "#2bb3c0");
+  for (const l of lines) {
+    if (l.price == null) continue;
+    series.createPriceLine({ price: l.price, color: l.color, lineWidth: l.dashed ? 1 : 2,
+      lineStyle: l.dashed ? LightweightCharts.LineStyle.Dashed : LightweightCharts.LineStyle.Solid,
+      axisLabelVisible: true, title: l.title || "" });
+  }
+  // Zoom to the last `show` bars once the chart has its size (it ignores this before layout)
+  const n = s.candles.length;
+  requestAnimationFrame(() => chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - show), to: n + 2 }));
+  return { chart, series };
 }
 
 const CHART_LEGEND = `<div class="legend"><span><i style="background:#f0a020"></i>50-day avg</span><span><i style="background:#7b61ff"></i>200-day avg</span></div>`;

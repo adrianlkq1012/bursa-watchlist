@@ -42,6 +42,7 @@ async function route(url) {
   let m;
   if (path === "/search") return { body: await search(url.searchParams.get("q") || ""), maxAge: 86400 };
   if ((m = path.match(/^\/stock\/([0-9A-Z]{4,6})$/i))) return { body: await stock(m[1].toUpperCase()), maxAge: 1800 };
+  if ((m = path.match(/^\/intraday\/([0-9A-Z]{4,6})$/i))) return { body: await intraday(m[1].toUpperCase()), maxAge: 300 };
   if (path === "/news") return { body: await news(url.searchParams.get("q") || ""), maxAge: 3600 };
   if (path === "/screen") return { body: await screen(), maxAge: 1800 };
   throw Object.assign(new Error("Not found"), { status: 404 });
@@ -173,6 +174,22 @@ async function stock(code) {
     },
     candles, volumes,
   };
+}
+
+// Last 5 trading days of 15-minute bars, for day-trading setups. Times are shifted to
+// Malaysia time (UTC+8) so charts show local clock times.
+async function intraday(code) {
+  const d = await getJSON(`${Y}/v8/finance/chart/${code}.KL?range=5d&interval=15m`);
+  const c = d.chart?.result?.[0];
+  if (!c?.timestamp) throw new Error(`No intraday data for ${code}`);
+  const q = c.indicators.quote[0];
+  const candles = [], volumes = [];
+  c.timestamp.forEach((t, i) => {
+    if (q.close[i] == null || q.open[i] == null) return;
+    candles.push([t + 8 * 3600, q.open[i], q.high[i], q.low[i], q.close[i]]);
+    volumes.push(q.volume[i] || 0);
+  });
+  return { code, interval: "15m", candles, volumes };
 }
 
 const tag = (s, t) => {

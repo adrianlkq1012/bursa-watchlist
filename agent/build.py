@@ -100,7 +100,7 @@ def main():
 
     docs = ROOT / "docs"
     (docs / "reports").mkdir(parents=True, exist_ok=True)
-    for name in ("style.css", "common.js", "chat.js", "signals.js", "stock.html", "report.html"):
+    for name in ("style.css", "common.js", "chat.js", "signals.js", "trading.js", "stock.html", "report.html"):
         shutil.copy(WEB / name, docs / name)
     relay_url = os.environ.get("RELAY_URL") or (ROOT / "relay" / "url.txt").read_text().strip()
     (docs / "config.js").write_text((WEB / "config.js").read_text().replace("__RELAY_URL__", relay_url.rstrip("/")))
