@@ -139,3 +139,10 @@ ul.lv li { padding: 4px 0; border-bottom: 1px solid var(--line); } ul.lv li:last
 .bt { margin-top: 18px; padding-top: 14px; border-top: 1px dashed var(--line); }
 .bt p { font-size: 14px; }
 .bt-table tr.hl td { background: var(--bg); font-weight: 600; }
+.live { font-size: 12px; color: var(--muted); }
+.live::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px;
+  background: var(--muted); vertical-align: middle; }
+.live.on::before { background: var(--pos); animation: pulse 2s infinite; }
+@keyframes pulse { 50% { opacity: .3; } }
+.flash { animation: flash 1.2s; }
+@keyframes flash { from { background: var(--neu-bg); } to { background: transparent; } }

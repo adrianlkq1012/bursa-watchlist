@@ -130,3 +130,46 @@ function mountSearch(el, { compact = false, autofocus = false } = {}) {
   document.addEventListener("click", (e) => { if (!el.contains(e.target)) { hits = []; render(); } });
   if (autofocus && matchMedia("(min-width: 700px)").matches) input.focus();
 }
+
+// ---- Live prices ----
+// Bursa trades Mon–Fri 9:00–12:30 and 14:30–17:00 Malaysia time (public holidays not checked)
+function marketOpen(now = new Date()) {
+  const myt = new Date(now.getTime() + 8 * 3600e3);
+  const day = myt.getUTCDay(), mins = myt.getUTCHours() * 60 + myt.getUTCMinutes();
+  return day >= 1 && day <= 5 && ((mins >= 540 && mins <= 750) || (mins >= 870 && mins <= 1020));
+}
+
+// "Last trade 10:42am (about 15 min delayed)"
+function tradeTimeLabel(unix) {
+  if (!unix) return "";
+  const d = new Date(unix * 1000);
+  const t = d.toLocaleTimeString("en-MY", { hour: "numeric", minute: "2-digit", timeZone: "Asia/Kuala_Lumpur" });
+  const day = d.toLocaleDateString("en-MY", { day: "numeric", month: "short", timeZone: "Asia/Kuala_Lumpur" });
+  const today = new Date().toLocaleDateString("en-MY", { day: "numeric", month: "short", timeZone: "Asia/Kuala_Lumpur" });
+  return marketOpen()
+    ? `Last trade ${t} · Yahoo data, about 15 min delayed · updates every minute`
+    : `Market closed · last trade ${day === today ? "" : day + " "}${t}`;
+}
+
+// Calls onUpdate({code: quote}) now and then every minute while the market is open
+function watchPrices(codes, onUpdate) {
+  const tick = () => relay(`/quote/${codes.join(",")}`).then(onUpdate).catch(() => {});
+  tick();
+  setInterval(() => { if (marketOpen() && !document.hidden) tick(); }, 60e3);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && marketOpen()) tick(); });
+}
+
+// Refresh the price cells (data-px / data-chg) every minute while the market is open
+function liveCells(codes) {
+  watchPrices(codes, (q) => {
+    for (const [code, x] of Object.entries(q)) {
+      document.querySelectorAll(`[data-px="${code}"]`).forEach((el) => {
+        const v = (el.dataset.prefix || "") + fmt(x.price);
+        if (el.textContent !== v) { el.textContent = v; el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
+      });
+      document.querySelectorAll(`[data-chg="${code}"]`).forEach((el) => { el.innerHTML = chg(x.change_pct); el.className = ""; });
+    }
+    const any = Object.values(q)[0];
+    document.querySelectorAll(".live").forEach((el) => { el.textContent = tradeTimeLabel(any?.time); el.classList.toggle("on", marketOpen()); });
+  });
+}

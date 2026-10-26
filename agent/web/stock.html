@@ -51,12 +51,13 @@ function render(s, rep) {
   <section class="card">
     <div class="stock-head">
       <h1 style="margin:0;font-size:24px">${esc(s.name)} <span class="sub">${esc(s.short)} · ${esc(s.code)}</span></h1>
-      <span class="price">RM ${fmt(s.close)}</span>
-      ${s.change_pct == null ? "" : chg(s.change_pct)}
+      <span class="price" id="px">RM ${fmt(s.close)}</span>
+      <span id="pxchg">${s.change_pct == null ? "" : chg(s.change_pct)}</span>
       <span class="badge ${esc(s.rating)}">${esc(s.rating)}</span>
     </div>
+    <div class="live" id="live"></div>
     <div class="sub">${[s.sector, s.industry].filter(Boolean).map(esc).join(" · ") || "Sector not available"} · Market cap RM ${big(F.market_cap)}
-      ${s.change_52w == null ? "" : ` · 1 year ${chg(s.change_52w)}`} · Prices as of ${esc(s.as_of || "–")}</div>
+      ${s.change_52w == null ? "" : ` · 1 year ${chg(s.change_52w)}`}</div>
     ${r ? `
     <div class="brief">
       <div class="verdict"><span class="k">AI deep-dive verdict</span>
@@ -154,6 +155,7 @@ function render(s, rep) {
 
   renderTrade(s);
   if (location.hash === "#trade") $("#trade").scrollIntoView();
+  startLive(s);
   let latestNews = rep?.news || [];
   const query = '"' + s.name.replace(/\s+(Berhad|Bhd\.?)$/i, "") + '"';
   relay(`/news?q=${encodeURIComponent(query)}`)
@@ -239,6 +241,29 @@ function renderTrade(s) {
     trade.dayBars = d;
     if (!trade.day) trade.dayErr = "Not enough intraday trading yet.";
   }).catch((e) => { trade.dayErr = e.message; }).finally(() => { if (trade.tab === "day") drawTrade(); });
+}
+
+// Price in the header refreshes every minute in trading hours; the day-trade setup every 2 minutes
+function startLive(s) {
+  let ticks = 0;
+  watchPrices([s.code], (q) => {
+    const x = q[s.code];
+    if (!x?.price) return;
+    if (x.price !== s.close) {
+      s.close = x.price;
+      $("#px").textContent = `RM ${fmt(x.price)}`;
+      $("#px").classList.remove("flash"); void $("#px").offsetWidth; $("#px").classList.add("flash");
+    }
+    if (x.change_pct != null) $("#pxchg").innerHTML = chg(x.change_pct);
+    $("#live").textContent = tradeTimeLabel(x.time);
+    $("#live").classList.toggle("on", marketOpen());
+    if (++ticks % 2 === 0 && trade.tab === "day" && marketOpen()) {
+      relay(`/intraday/${s.code}`).then((d) => {
+        const ds = daySetup(d.candles, d.volumes);
+        if (ds) { trade.day = ds; trade.dayBars = d; drawTrade(); }
+      }).catch(() => {});
+    }
+  });
 }
 
 // ---- Backtest panel ----

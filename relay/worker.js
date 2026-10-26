@@ -5,6 +5,8 @@
 //
 //   GET /search?q=maybank     find Bursa stocks by name or code
 //   GET /stock/5161           prices, profile, ratios and financial statements for one stock
+//   GET /quote/5161,1155      latest price only (cached 1 minute; Yahoo itself is ~15 min behind)
+//   GET /intraday/5161        15-minute bars for day trading
 //   GET /news?q="JCY"         recent Google News headlines
 //   GET /screen               every Bursa stock with today's quote (for movers / browsing)
 
@@ -44,10 +46,11 @@ async function route(url) {
   if ((m = path.match(/^\/stock\/([0-9A-Z]{4,6})$/i))) return { body: await stock(m[1].toUpperCase()), maxAge: 1800 };
   if ((m = path.match(/^\/intraday\/([0-9A-Z]{4,6})$/i))) {
     const range = url.searchParams.get("range") === "60d" ? "60d" : "5d"; // 60 days is for backtesting
-    return { body: await intraday(m[1].toUpperCase(), range), maxAge: range === "60d" ? 1800 : 300 };
+    return { body: await intraday(m[1].toUpperCase(), range), maxAge: range === "60d" ? 1800 : 90 };
   }
+  if ((m = path.match(/^\/quote\/([0-9A-Z,]{4,60})$/i))) return { body: await quotes(m[1].toUpperCase().split(",").slice(0, 12)), maxAge: 60 };
   if (path === "/news") return { body: await news(url.searchParams.get("q") || ""), maxAge: 3600 };
-  if (path === "/screen") return { body: await screen(), maxAge: 1800 };
+  if (path === "/screen") return { body: await screen(), maxAge: 300 };
   throw Object.assign(new Error("Not found"), { status: 404 });
 }
 
@@ -177,6 +180,25 @@ async function stock(code) {
     },
     candles, volumes,
   };
+}
+
+// Just the latest price for one or more stocks: small and quick, for refreshing pages
+async function quotes(codes) {
+  const out = {};
+  await Promise.all(codes.filter((c) => /^[0-9A-Z]{4,6}$/.test(c)).map(async (code) => {
+    try {
+      const d = await getJSON(`${Y}/v8/finance/chart/${code}.KL?range=1d&interval=1m`);
+      const m = d.chart?.result?.[0]?.meta;
+      if (!m) return;
+      const prev = m.chartPreviousClose ?? m.previousClose;
+      out[code] = {
+        price: m.regularMarketPrice, prev, change_pct: prev ? (m.regularMarketPrice / prev - 1) * 100 : null,
+        high: m.regularMarketDayHigh, low: m.regularMarketDayLow, volume: m.regularMarketVolume,
+        time: m.regularMarketTime, // unix seconds of the last trade
+      };
+    } catch {}
+  }));
+  return out;
 }
 
 // 15-minute bars (last 5 days, or 60 for backtests), for day-trading setups. Times are

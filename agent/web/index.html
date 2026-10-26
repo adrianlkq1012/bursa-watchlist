@@ -37,10 +37,12 @@ $("#watch").innerHTML = `
   <h2 class="section-title">My Watchlist</h2>
   <table><thead><tr><th>Stock</th><th>Price</th><th>Day</th><th>AI view</th></tr></thead><tbody>
     ${DATA.watchlist.map((s) => `<tr><td>${stockLink(s.code, s.short)} <span class="sub">${s.code}</span></td>
-      <td>${fmt(s.close)}</td><td>${chg(s.change_pct)}</td><td>${badge(s.stance)}</td></tr>`).join("")}
+      <td data-px="${s.code}">${fmt(s.close)}</td><td data-chg="${s.code}">${chg(s.change_pct)}</td><td>${badge(s.stance)}</td></tr>`).join("")}
   </tbody></table>
+  <div class="live" style="margin-top:8px"></div>
   <p style="margin:12px 0 0"><a class="link" href="watchlist.html">Open My Watchlist: daily AI briefs, drivers & news →</a></p>`;
 
+liveCells(DATA.watchlist.map((s) => s.code));
 const M = DATA.market;
 $("#market").innerHTML = `
   <h2 class="section-title">Market today</h2>
