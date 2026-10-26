@@ -2,6 +2,7 @@
 import json
 import math
 import os
+import re
 import shutil
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -100,8 +101,12 @@ def main():
 
     docs = ROOT / "docs"
     (docs / "reports").mkdir(parents=True, exist_ok=True)
-    for name in ("style.css", "common.js", "chat.js", "signals.js", "trading.js", "stock.html", "report.html"):
+    # ?v=<build time> on scripts and styles so browsers fetch fresh copies after each update
+    version = datetime.now(MYT).strftime("%Y%m%d%H%M")
+    bust = lambda html: re.sub(r'(src|href)="(\w+\.(?:js|css))"', rf'\1="\2?v={version}"', html)
+    for name in ("style.css", "common.js", "chat.js", "signals.js", "trading.js", "report.html"):
         shutil.copy(WEB / name, docs / name)
+    (docs / "stock.html").write_text(bust((WEB / "stock.html").read_text()))
     relay_url = os.environ.get("RELAY_URL") or (ROOT / "relay" / "url.txt").read_text().strip()
     (docs / "config.js").write_text((WEB / "config.js").read_text().replace("__RELAY_URL__", relay_url.rstrip("/")))
     reports = []
@@ -126,7 +131,7 @@ def main():
                        "stance": (s.get("brief") or {}).get("stance")} for s in results],
     }
     for page, data in (("index.html", home), ("watchlist.html", payload)):
-        html = (WEB / page).read_text().replace("__DATA__", json.dumps(data).replace("</", "<\\/"))
+        html = bust((WEB / page).read_text()).replace("__DATA__", json.dumps(data).replace("</", "<\\/"))
         (docs / page).write_text(html)
     print(f"Wrote home and watchlist pages with {len(reports)} deep-dive report(s)")
 

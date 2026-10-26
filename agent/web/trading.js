@@ -171,3 +171,82 @@ function positionSize(riskRM, entry, stop) {
   const lots = Math.floor(riskRM / perShare / 100);
   return { lots, shares: lots * 100, cost: lots * 100 * entry, loss: lots * 100 * perShare };
 }
+
+// ---- Backtests ----
+// Replays history one bar at a time: at each point, build the setup from data available
+// then (no peeking ahead), place the order, and see what happened next.
+
+// Play one plan forward from bar `from`. Entry below the price is a limit buy (fills if the
+// low reaches it); above is a stop buy (fills if the high reaches it). Once in, whichever of
+// stop / TP1 is touched first decides the trade; if both in the same bar we assume the stop
+// (the cautious reading). Results are in R (multiples of the amount risked) after costs.
+// Returns null if never filled, or { r, outcome, bars, exit }.
+const ROUND_TRIP_COST = 0.0025; // ~0.25%: brokerage both ways, clearing fee, stamp duty
+
+function simulate(bars, from, p, { fillWithin, maxHold, lastBar = bars.length - 1 }) {
+  const risk = p.entry - p.stop, prevClose = bars[from - 1][4];
+  const cost = (p.entry * ROUND_TRIP_COST) / risk;
+  const isLimit = p.entry <= prevClose;
+  let filled = -1;
+  for (let i = from; i <= Math.min(lastBar, from + fillWithin - 1); i++) {
+    if (isLimit ? bars[i][3] <= p.entry : bars[i][2] >= p.entry) { filled = i; break; }
+  }
+  if (filled < 0) return null;
+  const end = Math.min(lastBar, filled + maxHold);
+  for (let i = filled; i <= end; i++) {
+    const hitStop = bars[i][3] <= p.stop, hitTp = bars[i][2] >= p.tp1;
+    // A target touched on the fill bar itself is ignored: we can't tell if it came before the fill
+    if (hitStop) return { outcome: "loss", r: -1 - cost, bars: i - filled, exit: i };
+    if (hitTp && i > filled) return { outcome: "win", r: (p.tp1 - p.entry) / risk - cost, bars: i - filled, exit: i };
+  }
+  return { outcome: "timeout", r: (bars[end][4] - p.entry) / risk - cost, bars: end - filled, exit: end };
+}
+
+function summarise(trades) {
+  const by = {};
+  for (const t of trades) (by[t.kind] ||= []).push(t);
+  const stats = (ts) => {
+    const n = ts.length, w = ts.filter((t) => t.outcome === "win").length, l = ts.filter((t) => t.outcome === "loss").length;
+    return { trades: n, wins: w, losses: l, timeouts: n - w - l, winRate: n ? w / n : null,
+      avgR: n ? ts.reduce((a, t) => a + t.r, 0) / n : null, avgBars: n ? ts.reduce((a, t) => a + t.bars, 0) / n : null };
+  };
+  return { all: stats(trades), good: stats(trades.filter((t) => t.good)),
+    byKind: Object.fromEntries(Object.entries(by).map(([k, ts]) => [k, stats(ts)])), trades };
+}
+
+// Swing: re-run the daily setup every day of the last ~2 years; one position at a time.
+// Orders stay open 5 days; trades are closed after 30 days if neither level is hit.
+function backtestSwing(candles, volumes) {
+  const trades = [];
+  for (let i = 200; i < candles.length - 1; i++) {
+    let sw;
+    try { sw = swingSetup(candles.slice(0, i + 1), volumes.slice(0, i + 1)); } catch { continue; }
+    const p = sw.plan;
+    const res = simulate(candles, i + 1, p, { fillWithin: 5, maxHold: 30 });
+    if (!res) continue;
+    trades.push({ kind: p.kind, good: p.good, date: candles[i + 1][0], entry: p.entry, ...res });
+    i = res.exit; // wait for this trade to finish before taking the next
+  }
+  return summarise(trades);
+}
+
+// Day trades: for each session, build the setup after the first 30 minutes, then trade
+// the rest of that session only; anything still open is closed at the session's last bar.
+function backtestDay(bars, volumes) {
+  const dayOf = (t) => new Date(t * 1000).toISOString().slice(0, 10);
+  const starts = [];
+  bars.forEach((b, i) => { if (!i || dayOf(b[0]) !== dayOf(bars[i - 1][0])) starts.push(i); });
+  const trades = [];
+  for (let d = 1; d < starts.length; d++) {
+    const s = starts[d], end = (starts[d + 1] ?? bars.length) - 1;
+    if (end - s < 4) continue;
+    let ds;
+    try { ds = daySetup(bars.slice(0, s + 2), volumes.slice(0, s + 2)); } catch { continue; }
+    if (!ds) continue;
+    const p = ds.plan;
+    const res = simulate(bars, s + 2, p, { fillWithin: end - s - 2, maxHold: Infinity, lastBar: end });
+    if (!res) continue;
+    trades.push({ kind: p.kind, good: p.good, date: dayOf(bars[s][0]), entry: p.entry, ...res });
+  }
+  return summarise(trades);
+}

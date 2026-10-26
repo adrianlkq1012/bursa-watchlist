@@ -42,7 +42,10 @@ async function route(url) {
   let m;
   if (path === "/search") return { body: await search(url.searchParams.get("q") || ""), maxAge: 86400 };
   if ((m = path.match(/^\/stock\/([0-9A-Z]{4,6})$/i))) return { body: await stock(m[1].toUpperCase()), maxAge: 1800 };
-  if ((m = path.match(/^\/intraday\/([0-9A-Z]{4,6})$/i))) return { body: await intraday(m[1].toUpperCase()), maxAge: 300 };
+  if ((m = path.match(/^\/intraday\/([0-9A-Z]{4,6})$/i))) {
+    const range = url.searchParams.get("range") === "60d" ? "60d" : "5d"; // 60 days is for backtesting
+    return { body: await intraday(m[1].toUpperCase(), range), maxAge: range === "60d" ? 1800 : 300 };
+  }
   if (path === "/news") return { body: await news(url.searchParams.get("q") || ""), maxAge: 3600 };
   if (path === "/screen") return { body: await screen(), maxAge: 1800 };
   throw Object.assign(new Error("Not found"), { status: 404 });
@@ -176,10 +179,10 @@ async function stock(code) {
   };
 }
 
-// Last 5 trading days of 15-minute bars, for day-trading setups. Times are shifted to
-// Malaysia time (UTC+8) so charts show local clock times.
-async function intraday(code) {
-  const d = await getJSON(`${Y}/v8/finance/chart/${code}.KL?range=5d&interval=15m`);
+// 15-minute bars (last 5 days, or 60 for backtests), for day-trading setups. Times are
+// shifted to Malaysia time (UTC+8) so charts show local clock times.
+async function intraday(code, range = "5d") {
+  const d = await getJSON(`${Y}/v8/finance/chart/${code}.KL?range=${range}&interval=15m`);
   const c = d.chart?.result?.[0];
   if (!c?.timestamp) throw new Error(`No intraday data for ${code}`);
   const q = c.indicators.quote[0];

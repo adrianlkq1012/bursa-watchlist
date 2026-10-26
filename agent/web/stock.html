@@ -169,7 +169,8 @@ function render(s, rep) {
 
   StockChat.mount($("#chat"), {
     name: s.short,
-    data: () => ({ ...forAI(s), trading_setups: { swing: trade.swing?.plan, swing_trend: trade.swing?.trend, day: trade.day?.plan }, news: latestNews.map((n) => `${n.date} | ${n.source} | ${n.title}`),
+    data: () => ({ ...forAI(s), trading_setups: { swing: trade.swing?.plan, swing_trend: trade.swing?.trend, day: trade.day?.plan,
+      backtest_swing: trade.btSwing && { all: trade.btSwing.all, byKind: trade.btSwing.byKind }, backtest_day: trade.btDay && { all: trade.btDay.all, byKind: trade.btDay.byKind } }, news: latestNews.map((n) => `${n.date} | ${n.source} | ${n.title}`),
       deep_dive: rep ? rep.report : null }),
     suggestions: r
       ? ["Summarise the bull and bear case in 3 lines", "Is the dividend sustainable?", "What changed in the latest quarter?"]
@@ -227,11 +228,69 @@ function renderTrade(s) {
   try { trade.swing = s.candles.length >= 60 ? swingSetup(s.candles.map((c) => Array.isArray(c) ? c : [c.time, c.open, c.high, c.low, c.close]), vols) : null; }
   catch (e) { trade.swing = null; }
   drawTrade();
+  setTimeout(() => {
+    try { trade.btSwing = backtestSwing(s.candles, vols); } catch (e) { trade.btSwing = null; }
+    if (trade.tab === "swing") drawTrade();
+  }, 50);
+  relay(`/intraday/${s.code}?range=60d`).then((d) => { trade.btDay = backtestDay(d.candles, d.volumes); })
+    .catch((e) => { trade.btDayErr = e.message; }).finally(() => { if (trade.tab === "day") drawTrade(); });
   relay(`/intraday/${s.code}`).then((d) => {
     trade.day = daySetup(d.candles, d.volumes);
     trade.dayBars = d;
     if (!trade.day) trade.dayErr = "Not enough intraday trading yet.";
   }).catch((e) => { trade.dayErr = e.message; }).finally(() => { if (trade.tab === "day") drawTrade(); });
+}
+
+// ---- Backtest panel ----
+const KIND_NAMES = {
+  swing: { Breakout: "Breakout buy", Pullback: "Buy the pullback", Wait: "Wait-for-pullback limit order", Reversal: "Downtrend reversal trigger", Range: "Range trade" },
+  day: { Long: "Long above VWAP", Wait: "VWAP reclaim trigger", Range: "Opening-range break" },
+};
+const rFmt = (r) => r == null ? "–" : `${r >= 0 ? "+" : ""}${r.toFixed(2)}R`;
+
+function verdictFor(st) {
+  if (!st || st.trades < 5) return { cls: "Mixed", text: "Too few past cases to judge" };
+  if (st.avgR >= 0.2) return { cls: "Positive", text: "Has made money on this stock" };
+  if (st.avgR <= -0.1) return { cls: "Negative", text: "Has lost money on this stock" };
+  return { cls: "Mixed", text: "Roughly break-even on this stock" };
+}
+
+function backtestHTML(isDay, s, current) {
+  const bt = isDay ? trade.btDay : trade.btSwing;
+  const period = isDay ? "last 60 trading days" : "last ~1.5 years";
+  if (!bt) return `<div class="bt"><h3>Backtest</h3><p class="empty">${isDay && trade.btDayErr ? `Couldn't run it (${esc(trade.btDayErr)}).` : "Running backtest…"}</p></div>`;
+  const names = KIND_NAMES[isDay ? "day" : "swing"];
+  const cur = bt.byKind[current.kind];
+  const v = verdictFor(cur);
+  const row = (label, st, hl) => `<tr class="${hl ? "hl" : ""}"><td>${label}</td><td>${st.trades}</td>
+    <td>${st.trades ? (st.winRate * 100).toFixed(0) + "%" : "–"}</td>
+    <td class="${st.avgR > 0 ? "up" : st.avgR < 0 ? "down" : ""}">${rFmt(st.avgR)}</td>
+    <td class="hide-sm">${!st.trades ? "–" : isDay ? (st.avgBars / 4).toFixed(1) + " hrs" : st.avgBars.toFixed(1) + " days"}</td></tr>`;
+  const kinds = Object.keys(names).filter((k) => bt.byKind[k]);
+  const recent = bt.trades.slice(-12).reverse();
+  return `<div class="bt">
+    <h3>Backtest: how this has played out on ${esc(s.short)} (${period})</h3>
+    <p style="margin:6px 0 10px"><span class="badge ${v.cls}">${v.text}</span>
+      ${cur ? `<b>${esc(names[current.kind])}</b> came up ${cur.trades} time${cur.trades === 1 ? "" : "s"}: hit the target first ${cur.wins}, stopped out ${cur.losses}${cur.timeouts ? `, ran out of time ${cur.timeouts}` : ""}.
+        Average result <b>${rFmt(cur.avgR)}</b> per trade after costs${cur.trades ? ` (risking RM100 a trade ≈ ${cur.avgR >= 0 ? "+" : "−"}RM${Math.abs(cur.avgR * 100).toFixed(0)} each on average)` : ""}.`
+        : `This setup didn't come up in the test period.`}</p>
+    <div class="scroll"><table class="num bt-table"><thead><tr><th>Setup</th><th>Trades</th><th>Hit target</th><th>Avg result</th><th class="hide-sm">Avg hold</th></tr></thead><tbody>
+      ${kinds.map((k) => row(names[k], bt.byKind[k], k === current.kind)).join("")}
+      ${row("<b>All setups</b>", bt.all)}
+      ${row("Only reward : risk ≥ 1.5", bt.good)}
+    </tbody></table></div>
+    ${recent.length ? `<details><summary>Last ${recent.length} simulated trades</summary><div class="scroll"><table class="num"><thead><tr><th>Date</th><th>Setup</th><th>Entry</th><th>Result</th><th>Outcome</th></tr></thead><tbody>
+      ${recent.map((x) => `<tr><td>${esc(String(x.date))}</td><td>${esc(names[x.kind] || x.kind)}</td><td>${fmt(x.entry)}</td>
+        <td class="${x.r > 0 ? "up" : "down"}">${rFmt(x.r)}</td><td>${x.outcome === "win" ? "Target" : x.outcome === "loss" ? "Stopped" : isDay ? "Closed at end of day" : "Closed after 30 days"}</td></tr>`).join("")}
+    </tbody></table></div></details>` : ""}
+    <details><summary>How the backtest works</summary><p>
+      Every ${isDay ? "session (after its first 30 minutes)" : "trading day"} in the period, the same rules above were applied using only the prices known at that moment, with no peeking ahead.
+      The order then had to actually fill: ${isDay ? "within the same session" : "within 5 days"}. After that, whichever came first, stop loss or take profit 1, decided the trade.
+      ${isDay ? "Day trades still open were closed at the session's last price." : "Trades still open after 30 days were closed at that day's price."}
+      If the stop and target were both touched in the same bar, it's counted as a loss (the cautious assumption). One trade at a time.
+      <b>R</b> means "times the amount risked": +1R = you made what you risked, −1R = you lost it. Results include about 0.25% round-trip costs (brokerage, clearing fee, stamp duty).
+      Small samples are noisy, and past results don't guarantee future ones.</p></details>
+  </div>`;
 }
 
 function drawTrade() {
@@ -274,6 +333,7 @@ function drawTrade() {
         <span><i style="background:${LINE.tp}"></i>Targets</span><span><i style="background:${LINE.sup}"></i>Support / resistance</span>
         ${isDay ? `<span><i style="background:#2bb3c0"></i>VWAP</span><span><i style="background:${LINE.piv}"></i>Pivots</span>` : `<span><i style="background:#f0a020"></i>50-day</span><span><i style="background:#7b61ff"></i>200-day</span>`}
       </div>
+      ${backtestHTML(isDay, s, p)}
       ${isDay ? "" : levelList(setup)}
       <details><summary>How these levels are worked out</summary><p>
         ${isDay
