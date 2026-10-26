@@ -54,6 +54,7 @@ function render(s, rep) {
       <span class="price" id="px">RM ${fmt(s.close)}</span>
       <span id="pxchg">${s.change_pct == null ? "" : chg(s.change_pct)}</span>
       <span class="badge ${esc(s.rating)}">${esc(s.rating)}</span>
+      ${Watch.star(s.code)}
     </div>
     <div class="live" id="live"></div>
     <div class="sub">${[s.sector, s.industry].filter(Boolean).map(esc).join(" · ") || "Sector not available"} · Market cap RM ${big(F.market_cap)}
@@ -156,6 +157,7 @@ function render(s, rep) {
   renderTrade(s);
   if (location.hash === "#trade") $("#trade").scrollIntoView();
   startLive(s);
+  Watch.paintAll();
   let latestNews = rep?.news || [];
   const query = '"' + s.name.replace(/\s+(Berhad|Bhd\.?)$/i, "") + '"';
   relay(`/news?q=${encodeURIComponent(query)}`)

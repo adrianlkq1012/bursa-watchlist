@@ -2,31 +2,18 @@
 
     python -m agent.deepdive 5161          # one company (any Bursa code)
     python -m agent.deepdive 5161 7113     # several
-    python -m agent.deepdive               # every stock in watchlist.json
+    python -m agent.deepdive               # every stock on the owner's watchlist
 """
 import json
 import re
 import sys
 from datetime import datetime
 
-import yfinance as yf
-
 from agent import ai, news
-from agent.build import MYT, ROOT, analyse
-from agent.data import fetch_financials, ticker_for
+from agent.build import MYT, ROOT, analyse, stock_for, watchlist_codes
+from agent.data import fetch_financials
 
 REPORTS = ROOT / "reports"
-
-
-def stock_for(code: str, watchlist: list) -> dict:
-    for s in watchlist:
-        if s["code"] == code:
-            return s
-    info = yf.Ticker(ticker_for(code)).info or {}
-    name = info.get("longName") or info.get("shortName")
-    if not name:
-        raise SystemExit(f"Unknown Bursa code: {code}")
-    return {"code": code, "name": name, "short": info.get("shortName") or code}
 
 
 def performance(candles: list) -> dict:
@@ -78,8 +65,9 @@ def run(code: str, watchlist: list) -> None:
 
 
 def main(codes: list) -> None:
-    watchlist = json.loads((ROOT / "watchlist.json").read_text())["stocks"]
-    codes = codes or [s["code"] for s in watchlist]
+    config = json.loads((ROOT / "watchlist.json").read_text())
+    watchlist = config["stocks"]
+    codes = codes or watchlist_codes(config)
     for code in codes:
         code = code.strip().upper()
         if not re.fullmatch(r"[0-9A-Z]{4,6}", code):

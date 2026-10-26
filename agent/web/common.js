@@ -151,25 +151,111 @@ function tradeTimeLabel(unix) {
     : `Market closed · last trade ${day === today ? "" : day + " "}${t}`;
 }
 
-// Calls onUpdate({code: quote}) now and then every minute while the market is open
+// Calls onUpdate({code: quote}) now and then every minute while the market is open.
+// codes may be a function, so the list can change without starting another timer.
 function watchPrices(codes, onUpdate) {
-  const tick = () => relay(`/quote/${codes.join(",")}`).then(onUpdate).catch(() => {});
+  const list = () => (typeof codes === "function" ? codes() : codes);
+  const tick = () => list().length && relay(`/quote/${list().join(",")}`).then(onUpdate).catch(() => {});
   tick();
   setInterval(() => { if (marketOpen() && !document.hidden) tick(); }, 60e3);
   document.addEventListener("visibilitychange", () => { if (!document.hidden && marketOpen()) tick(); });
 }
 
 // Refresh the price cells (data-px / data-chg) every minute while the market is open
+let liveCodes = null;
 function liveCells(codes) {
-  watchPrices(codes, (q) => {
-    for (const [code, x] of Object.entries(q)) {
-      document.querySelectorAll(`[data-px="${code}"]`).forEach((el) => {
-        const v = (el.dataset.prefix || "") + fmt(x.price);
-        if (el.textContent !== v) { el.textContent = v; el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
-      });
-      document.querySelectorAll(`[data-chg="${code}"]`).forEach((el) => { el.innerHTML = chg(x.change_pct); el.className = ""; });
-    }
-    const any = Object.values(q)[0];
-    document.querySelectorAll(".live").forEach((el) => { el.textContent = tradeTimeLabel(any?.time); el.classList.toggle("on", marketOpen()); });
-  });
+  const first = liveCodes === null;
+  liveCodes = codes;
+  if (!first) { relay(`/quote/${codes.join(",")}`).then(updateCells).catch(() => {}); return; }
+  watchPrices(() => liveCodes, updateCells);
 }
+function updateCells(q) {
+  for (const [code, x] of Object.entries(q)) {
+    document.querySelectorAll(`[data-px="${code}"]`).forEach((el) => {
+      const v = (el.dataset.prefix || "") + fmt(x.price);
+      if (el.textContent !== v) { el.textContent = v; el.classList.remove("flash"); void el.offsetWidth; el.classList.add("flash"); }
+    });
+    document.querySelectorAll(`[data-chg="${code}"]`).forEach((el) => { el.innerHTML = chg(x.change_pct); el.className = ""; });
+  }
+  const any = Object.values(q)[0];
+  document.querySelectorAll(".live").forEach((el) => { el.textContent = tradeTimeLabel(any?.time); el.classList.toggle("on", marketOpen()); });
+}
+
+// ---- Watchlist ----
+// The owner (passcode saved on this device) edits the shared list stored on the relay, so it
+// syncs across their devices and drives the daily AI briefs. Everyone else keeps their own
+// list on their device, starting as a copy of the owner's.
+const Watch = (() => {
+  const LIST = "watchlist_codes", OWNER = "owner_key";
+  const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+  const lsSet = (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch {} };
+  let codes = null, claimed = true, loading = null;
+  const listeners = [];
+
+  const isOwner = () => !!lsGet(OWNER);
+
+  function load(force = false) {
+    if (codes && !force) return Promise.resolve(codes);
+    return loading = loading && !force ? loading : relay("/watchlist").catch(() => ({ codes: [], claimed: true })).then((srv) => {
+      claimed = srv.claimed;
+      const mine = lsGet(LIST);
+      if (isOwner()) codes = srv.codes;
+      else if (mine) codes = JSON.parse(mine);
+      else { codes = srv.codes; lsSet(LIST, JSON.stringify(codes)); }
+      loading = null;
+      return codes;
+    });
+  }
+
+  async function save(next) {
+    const prev = codes;
+    codes = next;
+    notify();
+    if (!isOwner()) { lsSet(LIST, JSON.stringify(next)); return; }
+    try {
+      codes = (await relaySend("PUT", "/watchlist", { codes: next }, { "X-Owner-Key": lsGet(OWNER) })).codes;
+    } catch (e) {
+      codes = prev;
+      if (e.status === 403) { lsSet(OWNER, null); alert("Your saved passcode no longer works. Unlock again on the My Watchlist page."); }
+      else alert(`Couldn't save your watchlist (${e.message}). Try again in a moment.`);
+    }
+    notify();
+  }
+
+  async function toggle(code) {
+    const list = await load();
+    save(list.includes(code) ? list.filter((c) => c !== code) : [...list, code]);
+  }
+
+  function notify() {
+    document.querySelectorAll("[data-star]").forEach(paint);
+    listeners.forEach((f) => f(codes));
+  }
+
+  function paint(el) {
+    const on = !!codes?.includes(el.dataset.star);
+    el.classList.toggle("on", on);
+    el.setAttribute("aria-pressed", on);
+    el.title = on ? "Remove from My Watchlist" : "Add to My Watchlist";
+    el.innerHTML = `${on ? "★" : "☆"}<span>${on ? "In watchlist" : "Watch"}</span>`;
+  }
+
+  // One listener for every star on the page, including ones rendered later
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-star]");
+    if (!b) return;
+    e.preventDefault(); e.stopPropagation();
+    toggle(b.dataset.star);
+  });
+
+  return {
+    load, toggle, isOwner, onChange: (f) => listeners.push(f),
+    claimed: () => claimed,
+    has: (code) => !!codes?.includes(code),
+    star: (code) => `<button class="star" data-star="${esc(code)}" type="button"></button>`,
+    paintAll: () => load().then(() => document.querySelectorAll("[data-star]").forEach(paint)),
+    async unlock(pass) { await relaySend("POST", "/watchlist/verify", { passcode: pass }); lsSet(OWNER, pass); await load(true); notify(); },
+    async claim(pass) { await relaySend("POST", "/watchlist/claim", { passcode: pass }); lsSet(OWNER, pass); await load(true); notify(); },
+    lock() { lsSet(OWNER, null); return load(true).then(notify); },
+  };
+})();

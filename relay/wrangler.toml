@@ -1,3 +1,8 @@
 name = "bursa-relay"
 main = "worker.js"
 compatibility_date = "2026-10-01"
+
+# Stores the owner's watchlist and a hash of their passcode
+[[kv_namespaces]]
+binding = "WATCHLIST"
+id = "6e6f7d61e5424207b92dc4750eb4df90"

@@ -1,7 +1,7 @@
 // Bursa Research relay (Cloudflare Worker, free tier).
 // The website can't call Yahoo Finance or Google News directly (they block other sites'
 // browser requests), so this fetches on demand, tidies the data, caches it briefly and
-// adds the headers that let the site read it. Read-only, public market data only.
+// adds the headers that let the site read it. Public market data, plus the owner's watchlist.
 //
 //   GET /search?q=maybank     find Bursa stocks by name or code
 //   GET /stock/5161           prices, profile, ratios and financial statements for one stock
@@ -9,19 +9,30 @@
 //   GET /intraday/5161        15-minute bars for day trading
 //   GET /news?q="JCY"         recent Google News headlines
 //   GET /screen               every Bursa stock with today's quote (for movers / browsing)
+//   GET /watchlist            the owner's watchlist codes (public, like the site)
+//   PUT /watchlist            replace it; needs the owner passcode in X-Owner-Key
+//   POST /watchlist/claim     set the owner passcode the first time (only while none is set)
+//   POST /watchlist/verify    check a passcode
 
 const UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36";
 const Y = "https://query1.finance.yahoo.com";
-const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET, OPTIONS" };
+const CORS = {
+  "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "GET, PUT, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, X-Owner-Key",
+};
 
 export default {
   async fetch(request, env, ctx) {
     if (request.method === "OPTIONS") return new Response(null, { headers: CORS });
+    const url = new URL(request.url);
+    if (url.pathname.startsWith("/watchlist")) {
+      try { return reply(await watchlist(request, url, env)); }
+      catch (e) { return reply({ error: String(e.message || e) }, e.status || 500); }
+    }
     if (request.method !== "GET") return reply({ error: "GET only" }, 405);
 
     // Serve repeat requests from memory so Yahoo sees few requests. (Cloudflare's Cache API
     // doesn't work on free *.workers.dev addresses, so this is a simple in-memory cache.)
-    const url = new URL(request.url);
     const key = url.pathname + url.search;
     const hit = memo.get(key);
     if (hit && hit.until > Date.now()) return reply(hit.body, 200, hit.maxAge);
@@ -192,7 +203,7 @@ async function quotes(codes) {
       if (!m) return;
       const prev = m.chartPreviousClose ?? m.previousClose;
       out[code] = {
-        price: m.regularMarketPrice, prev, change_pct: prev ? (m.regularMarketPrice / prev - 1) * 100 : null,
+        short: m.shortName || code, price: m.regularMarketPrice, prev, change_pct: prev ? (m.regularMarketPrice / prev - 1) * 100 : null,
         high: m.regularMarketDayHigh, low: m.regularMarketDayLow, volume: m.regularMarketVolume,
         time: m.regularMarketTime, // unix seconds of the last trade
       };
@@ -288,4 +299,51 @@ async function screen() {
     if (quotes.length < 250) break;
   }
   return rows;
+}
+
+// ---- Owner's watchlist (Cloudflare KV) ----
+// The passcode is never stored, only a salted SHA-256 hash of it.
+const DEFAULT_LIST = ["5238", "6963", "5161"];
+const fail = (msg, status) => { throw Object.assign(new Error(msg), { status }); };
+
+async function hash(passcode, salt) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(salt + ":" + passcode));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function checkKey(env, passcode) {
+  const auth = await env.WATCHLIST.get("auth", "json");
+  if (!auth) fail("No owner passcode set yet", 409);
+  if (!passcode || (await hash(passcode, auth.salt)) !== auth.hash) fail("Wrong passcode", 403);
+}
+
+async function watchlist(request, url, env) {
+  const path = url.pathname.replace(/\/+$/, "");
+  const body = request.method === "GET" ? null : await request.json().catch(() => ({}));
+
+  if (path === "/watchlist" && request.method === "GET") {
+    const codes = (await env.WATCHLIST.get("codes", "json")) || DEFAULT_LIST;
+    const claimed = !!(await env.WATCHLIST.get("auth"));
+    return { codes, claimed };
+  }
+  if (path === "/watchlist" && request.method === "PUT") {
+    await checkKey(env, request.headers.get("X-Owner-Key"));
+    const codes = [...new Set((body.codes || []).map((c) => String(c).toUpperCase()))].filter((c) => /^[0-9A-Z]{4,6}$/.test(c));
+    if (codes.length > 50) fail("Watchlist is limited to 50 stocks", 400);
+    await env.WATCHLIST.put("codes", JSON.stringify(codes));
+    return { codes };
+  }
+  if (path === "/watchlist/claim" && request.method === "POST") {
+    if (await env.WATCHLIST.get("auth")) fail("Owner passcode is already set", 409);
+    const pass = String(body.passcode || "");
+    if (pass.length < 6) fail("Use at least 6 characters", 400);
+    const salt = crypto.randomUUID();
+    await env.WATCHLIST.put("auth", JSON.stringify({ salt, hash: await hash(pass, salt) }));
+    return { ok: true };
+  }
+  if (path === "/watchlist/verify" && request.method === "POST") {
+    await checkKey(env, String(body.passcode || ""));
+    return { ok: true };
+  }
+  fail("Not found", 404);
 }

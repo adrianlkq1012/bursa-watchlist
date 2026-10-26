@@ -1,14 +1,21 @@
-"""Run the analysis for every stock in watchlist.json and write docs/index.html."""
+"""Analyse every stock on the owner's watchlist and write the site into docs/.
+
+The watchlist itself lives on the relay (edited from the site with the owner passcode);
+watchlist.json adds optional per-stock settings such as news queries and drivers.
+"""
 import json
 import math
 import os
 import re
 import shutil
+import urllib.request
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
+import yfinance as yf
+
 from agent import ai, news
-from agent.data import fetch_fundamentals, fetch_prices
+from agent.data import fetch_fundamentals, fetch_prices, ticker_for
 from agent.indicators import add_indicators, key_levels
 from agent.macro import drivers_for, snapshot
 from agent.signals import overall, trend_signals, valuation_signals
@@ -70,16 +77,51 @@ def _line(df, col):
     return [{"time": d.strftime("%Y-%m-%d"), "value": float(v)} for d, v in df[col].dropna().items()]
 
 
+def relay_url() -> str:
+    return (os.environ.get("RELAY_URL") or (ROOT / "relay" / "url.txt").read_text().strip()).rstrip("/")
+
+
+def stock_for(code: str, known: list) -> dict:
+    """Settings from watchlist.json if present, otherwise just the name from Yahoo."""
+    for s in known:
+        if s["code"] == code:
+            return s
+    info = yf.Ticker(ticker_for(code)).info or {}
+    name = info.get("longName") or info.get("shortName")
+    if not name:
+        raise SystemExit(f"Unknown Bursa code: {code}")
+    return {"code": code, "name": name, "short": info.get("shortName") or code}
+
+
+def watchlist_codes(config: dict) -> list:
+    """The owner's list from the relay; falls back to watchlist.json if the relay is down."""
+    try:
+        # Cloudflare turns away Python's default user agent
+        req = urllib.request.Request(relay_url() + "/watchlist", headers={"User-Agent": "Mozilla/5.0 (bursa-watchlist build)"})
+        codes = json.loads(urllib.request.urlopen(req, timeout=30).read())["codes"]
+        print(f"LIST {len(codes)} stocks from the online watchlist: {', '.join(codes)}")
+        return codes
+    except Exception as e:
+        print(f"LIST relay unavailable ({e}); using watchlist.json")
+        return [s["code"] for s in config["stocks"]]
+
+
 def main():
     config = json.loads((ROOT / "watchlist.json").read_text())
     results = []
-    for s in config["stocks"]:
+    stocks = []
+    for code in watchlist_codes(config):
+        try:
+            stocks.append(stock_for(code, config["stocks"]))
+        except (SystemExit, Exception) as e:
+            print(f"FAIL {code}: {e}")
+    for s in stocks:
         try:
             results.append(analyse(s))
             print(f"OK   {s['short']} ({s['code']})")
         except Exception as e:
             print(f"FAIL {s['short']} ({s['code']}): {e}")
-    if not results:
+    if stocks and not results:
         # Fail loudly so the cloud run keeps the last good dashboard online
         raise SystemExit("No stocks could be analysed")
 
@@ -107,8 +149,7 @@ def main():
     for name in ("style.css", "common.js", "chat.js", "signals.js", "trading.js", "report.html"):
         shutil.copy(WEB / name, docs / name)
     (docs / "stock.html").write_text(bust((WEB / "stock.html").read_text()))
-    relay_url = os.environ.get("RELAY_URL") or (ROOT / "relay" / "url.txt").read_text().strip()
-    (docs / "config.js").write_text((WEB / "config.js").read_text().replace("__RELAY_URL__", relay_url.rstrip("/")))
+    (docs / "config.js").write_text((WEB / "config.js").read_text().replace("__RELAY_URL__", relay_url()))
     reports = []
     for path in sorted((ROOT / "reports").glob("*.json")):
         shutil.copy(path, docs / "reports" / path.name)
@@ -121,8 +162,11 @@ def main():
         "ai_enabled": ai.available(),
         "repo": os.environ.get("GITHUB_REPOSITORY"),
         "market": market,
-        "stocks": results,
         "reports": reports,
+        # The watchlist page fetches prices live; it only needs what the evening run adds
+        "briefs": {s["code"]: {"brief": s.get("brief"), "news": s.get("news"),
+                               "drivers": [{k: d.get(k) for k in ("label", "why", "m1", "impact")} for d in s.get("drivers", [])]}
+                   for s in results},
     }
     home = {
         "generated": payload["generated"], "repo": payload["repo"], "reports": reports,
