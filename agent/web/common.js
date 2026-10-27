@@ -184,7 +184,7 @@ function updateCells(q) {
 // ---- Watchlist ----
 // The owner (passcode saved on this device) edits the shared list stored on the relay, so it
 // syncs across their devices and drives the daily AI briefs. Everyone else keeps their own
-// list on their device, starting as a copy of the owner's.
+// list on their device, starting empty.
 const Watch = (() => {
   const LIST = "watchlist_codes", OWNER = "owner_key";
   const lsGet = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
@@ -201,7 +201,7 @@ const Watch = (() => {
       const mine = lsGet(LIST);
       if (isOwner()) codes = srv.codes;
       else if (mine) codes = JSON.parse(mine);
-      else { codes = srv.codes; lsSet(LIST, JSON.stringify(codes)); }
+      else codes = [];
       loading = null;
       return codes;
     });
@@ -257,5 +257,6 @@ const Watch = (() => {
     async unlock(pass) { await relaySend("POST", "/watchlist/verify", { passcode: pass }); lsSet(OWNER, pass); await load(true); notify(); },
     async claim(pass) { await relaySend("POST", "/watchlist/claim", { passcode: pass }); lsSet(OWNER, pass); await load(true); notify(); },
     lock() { lsSet(OWNER, null); return load(true).then(notify); },
+    clear: () => save([]),
   };
 })();

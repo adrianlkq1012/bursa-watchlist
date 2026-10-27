@@ -43,7 +43,7 @@ function renderWatch(codes) {
         <td data-px="${c}">…</td><td data-chg="${c}"></td><td>${badge(STANCE[c])}</td><td>${Watch.star(c)}</td></tr>`).join("")}
     </tbody></table>
     <div class="live" style="margin-top:8px"></div>`
-    : `<p class="empty">Empty. Search a stock and tap <b>☆ Watch</b> on its page to add it.</p>`}
+    : `<p class="empty">Your watchlist is empty. Search for any Bursa stock above, open it and tap <b>☆ Watch</b> to add it. Your list is saved on this device.</p>`}
     <p style="margin:12px 0 0"><a class="link" href="watchlist.html">Open My Watchlist: AI briefs, setups & news →</a></p>`;
   Watch.paintAll();
   if (!codes.length) return;

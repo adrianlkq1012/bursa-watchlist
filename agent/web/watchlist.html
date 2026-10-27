@@ -178,7 +178,8 @@ function renderOwner() {
     <p style="margin:0">🔓 <b>Owner mode.</b> This list is saved online and syncs across all your devices. It also decides which stocks get the daily AI briefs and Saturday deep-dives.
       <button class="link-btn" id="lock" type="button">Lock this device</button></p>`
     : claimed ? `
-    <p style="margin:0">This watchlist is saved <b>on this device only</b>. Add or remove stocks freely; it won't affect anyone else.</p>
+    <p style="margin:0">This watchlist is saved <b>on this device only</b>. Add or remove stocks freely; it won't affect anyone else.
+      <button class="link-btn" id="clear" type="button">Clear my list</button></p>
     <details><summary>Site owner? Unlock to edit your synced list</summary>
       <form id="unlock"><input type="password" placeholder="Owner passcode" autocomplete="current-password" required><button>Unlock</button></form>
       <p class="sub" id="ownmsg"></p></details>`
@@ -187,6 +188,7 @@ function renderOwner() {
       Only someone with the passcode can change it. Pick something you don't use elsewhere (at least 6 characters).</p>
     <form id="claim"><input type="password" placeholder="Choose an owner passcode" autocomplete="new-password" minlength="6" required><button>Set passcode</button></form>
     <p class="sub" id="ownmsg"></p>`;
+  $("#clear")?.addEventListener("click", () => { if (confirm("Remove every stock from your watchlist on this device?")) Watch.clear().then(render); });
   $("#lock")?.addEventListener("click", () => Watch.lock().then(() => { renderOwner(); render(); }));
   for (const [id, fn] of [["#unlock", Watch.unlock], ["#claim", Watch.claim]]) {
     $(id)?.addEventListener("submit", async (e) => {
