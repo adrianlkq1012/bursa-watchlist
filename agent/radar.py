@@ -63,6 +63,7 @@ def build(relay: str, now: datetime) -> dict:
     morning = now.hour < 12
     radar = {
         "date": now.strftime("%-d %B %Y | %A"),
+        "time": now.strftime("%H:%M"),
         "edition": "Morning edition, before Bursa opens" if morning else "Evening edition, after Bursa closes",
         "markets": [quote(*m) for m in MARKETS],
         "bursa": breadth(relay),

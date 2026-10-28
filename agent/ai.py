@@ -258,7 +258,7 @@ RADAR_SCHEMA = """{
 
 def market_radar(radar: dict, morning: bool):
     data = {
-        "today_malaysia": radar["date"],
+        "today_malaysia": f"{radar['date']}, {radar['time']} MYT",
         "edition": radar["edition"],
         "markets_latest_session": [{k: m.get(k) for k in ("label", "session", "last", "prev", "change", "change_pct", "week_pct")}
                                    for m in radar["markets"] if m.get("last") is not None],
@@ -267,7 +267,7 @@ def market_radar(radar: dict, morning: bool):
     }
     task = f"""Write today's "Global Market Radar: What Matters for Bursa" ({'morning, before Bursa opens: lead with how Wall Street, oil and yields closed overnight' if morning else 'evening, after Bursa closes: lead with how Bursa and Asia closed today'}).
 Give 4-5 items covering the biggest drivers: US stocks (and chips/AI), oil, US yields and the Fed, Asia, the ringgit, and the KLCI's latest session with market breadth (gainers vs losers) and the large caps that moved it.
-Refer to each market's session by its weekday (e.g. "Tuesday's close"). Only mention a scheduled event (Fed meeting, results, data release) if it appears in the news.
+Refer to each market's session by its weekday (e.g. "Tuesday's close"). A market whose session is today and still open (Bursa trades until 17:00 MYT) has not closed: describe it as "so far today". Only mention a scheduled event (Fed meeting, results, data release) if it appears in the news.
 "watching" has 4-6 entries; "bottom_line" has 3-5. Schema:
 {RADAR_SCHEMA}"""
     out = _ask(task, data)
