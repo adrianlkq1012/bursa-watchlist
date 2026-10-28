@@ -4,6 +4,8 @@ on:
   schedule:
     # 10:30 UTC = 6:30pm Malaysia time, after Bursa closes. Mon-Fri.
     - cron: "30 10 * * 1-5"
+    # 23:00 UTC Sun-Thu = 7:00am Malaysia time Mon-Fri, after Wall Street closes (morning market radar)
+    - cron: "0 23 * * 0-4"
   workflow_dispatch: # lets you run it manually from the Actions tab
 
 permissions:

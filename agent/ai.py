@@ -238,3 +238,47 @@ def market_brief(market: dict, stocks: list):
         ],
     }
     return _ask(f"Write today's market brief for this portfolio. Schema:\n{MARKET_SCHEMA}", data)
+
+
+RADAR_SCHEMA = """{
+  "intro": "2 sentences: the overall mood across world markets and Bursa, with the key reason",
+  "items": [{
+    "tone": "good | watch | bad (for Bursa investors)",
+    "headline": "short headline that leads with the key number, e.g. 'Nasdaq rallies 1.18%: AI confidence returns'",
+    "points": ["2-3 short sentences of facts with numbers and the reason behind the move, from the data and news"],
+    "malaysia_angle": "1-2 sentences: what this means for Bursa, naming the sectors or kinds of stocks affected"
+  }],
+  "watching": [{"label": "short name, e.g. 'US 10Y' or 'Fed decision'", "value": "level or timing, e.g. '~4.99%' or 'Thursday morning MYT'"}],
+  "bottom_line": [{"text": "3-6 words, e.g. 'Bursa breadth strengthening'", "tone": "good | watch | bad"}],
+  "summary": "2 sentences: how constructive the overall setup is and the next big tests",
+  "bursa_focus": "1 sentence: the one thing to watch on Bursa in the next session",
+  "sources": ["numbers of the news items (from news_numbered) you relied on, most important first, up to 6"]
+}"""
+
+
+def market_radar(radar: dict, morning: bool):
+    data = {
+        "today_malaysia": radar["date"],
+        "edition": radar["edition"],
+        "markets_latest_session": [{k: m.get(k) for k in ("label", "session", "last", "prev", "change", "change_pct", "week_pct")}
+                                   for m in radar["markets"] if m.get("last") is not None],
+        "bursa_latest_session_breadth": radar["bursa"],
+        "news_numbered": [f"{i} | {n['date']} | {n['source']} | {n['title']}" for i, n in enumerate(radar["news"], 1)],
+    }
+    task = f"""Write today's "Global Market Radar: What Matters for Bursa" ({'morning, before Bursa opens: lead with how Wall Street, oil and yields closed overnight' if morning else 'evening, after Bursa closes: lead with how Bursa and Asia closed today'}).
+Give 4-5 items covering the biggest drivers: US stocks (and chips/AI), oil, US yields and the Fed, Asia, the ringgit, and the KLCI's latest session with market breadth (gainers vs losers) and the large caps that moved it.
+Refer to each market's session by its weekday (e.g. "Tuesday's close"). Only mention a scheduled event (Fed meeting, results, data release) if it appears in the news.
+"watching" has 4-6 entries; "bottom_line" has 3-5. Schema:
+{RADAR_SCHEMA}"""
+    out = _ask(task, data)
+    if out:
+        picked = []
+        for n in out.get("sources", []):
+            try:
+                item = radar["news"][int(n) - 1]
+            except (ValueError, IndexError):
+                continue
+            if item not in picked:
+                picked.append(item)
+        out["sources"] = [{"title": i["title"], "source": i["source"], "link": i["link"]} for i in picked]
+    return out

@@ -13,6 +13,7 @@
     <p id="tagline">Search any company listed on Bursa Malaysia for prices, signals, financials and AI analysis.</p>
     <div id="search"></div>
   </header>
+  <div class="card radar" id="radar"></div>
   <div class="grid" style="margin-top:0">
     <div class="card" id="watch"></div>
     <div class="card" id="market"></div>
@@ -20,7 +21,7 @@
   <div class="card" id="movers"></div>
   <div class="card" id="reports"></div>
   <div class="card" id="browse"></div>
-  <p class="disclaimer">Data from Yahoo Finance, delayed and refreshed every weekday evening. Signals and AI write-ups are for
+  <p class="disclaimer">Data from Yahoo Finance, delayed. The market radar and AI briefs refresh every weekday at about 7am and 6:30pm Malaysia time. Signals and AI write-ups are for
     research only, not financial advice. Check Bursa announcements and company reports before investing.</p>
 </div>
 <script src="config.js"></script>
@@ -55,6 +56,43 @@ function renderWatch(codes) {
 }
 Watch.load().then(renderWatch);
 Watch.onChange(renderWatch);
+
+// Global Market Radar: the day's overview, written by the AI at each morning and evening run
+const R = DATA.radar;
+const TONE = { good: "🟢", watch: "🟠", bad: "🔴" };
+const tone = (t) => TONE[String(t).trim().toLowerCase()] || "⚪";
+const KEY = ["Nasdaq", "S&P 500", "Philadelphia Semiconductor index", "Brent crude (US$/barrel)", "US 10-year Treasury yield (%)", "USD/MYR", "FBM KLCI", "Gold (US$/oz)"];
+const SHORT = { "Philadelphia Semiconductor index": "Chips (SOX)", "Brent crude (US$/barrel)": "Brent", "US 10-year Treasury yield (%)": "US 10Y", "Gold (US$/oz)": "Gold" };
+function renderRadar() {
+  if (!R) { $("#radar").remove(); return; }
+  const A = R.ai, B = R.bursa || {};
+  const tiles = KEY.map((k) => R.markets.find((m) => m.label === k)).filter((m) => m?.last != null).map((m) => `
+    <div class="tile"><span class="sub">${esc(SHORT[m.label] || m.label)}</span><b>${fmt(m.last, m.label.includes("yield") ? 2 : m.last < 10 ? 3 : 2)}${m.label.includes("yield") ? "%" : ""}</b>
+      ${m.change_pct != null ? chg(m.change_pct) : `<span class="${m.change >= 0 ? "up" : "down"}">${m.change >= 0 ? "+" : ""}${(m.change * 100).toFixed(0)} bp</span>`}</div>`).join("");
+  $("#radar").innerHTML = `
+    <div class="radar-head"><h2 class="section-title" style="margin:0">🌏 Global Market Radar: What Matters for Bursa</h2>
+      <span class="sub">${esc(R.date)} · ${esc(R.edition)}</span></div>
+    <div class="tiles">${tiles}</div>
+    ${B.gainers != null ? `<p class="sub" style="margin:6px 0 0">Bursa latest session: <span class="up">${B.gainers} gainers</span> · <span class="down">${B.losers} losers</span></p>` : ""}
+    ${A ? `
+      <p class="radar-intro">${esc(A.intro)}</p>
+      <div class="radar-items">${(A.items || []).map((it, i) => `
+        <div class="radar-item">
+          <h3>${tone(it.tone)} ${i + 1}. ${esc(it.headline)}</h3>
+          ${(it.points || []).map((p) => `<p>${esc(p)}</p>`).join("")}
+          <p class="angle"><b>Malaysia angle:</b> ${esc(it.malaysia_angle)}</p>
+        </div>`).join("")}</div>
+      <div class="grid">
+        <div><h3>📌 What to watch next</h3><ul class="watching">${(A.watching || []).map((w) => `<li><span>${esc(w.label)}</span><b>${esc(w.value)}</b></li>`).join("")}</ul></div>
+        <div><h3>Bottom line</h3><ul class="bottom">${(A.bottom_line || []).map((b) => `<li>${esc(b.text)} ${tone(b.tone)}</li>`).join("")}</ul>
+          <p style="margin:8px 0 0">${esc(A.summary)}</p>
+          ${A.bursa_focus ? `<p class="angle"><b>For Bursa:</b> ${esc(A.bursa_focus)}</p>` : ""}</div>
+      </div>
+      ${A.sources?.length ? `<p class="sub radar-src">Sources: ${A.sources.map((s) => `<a href="${esc(s.link)}" target="_blank" rel="noopener">${esc(s.source || s.title)}</a>`).join(" · ")}</p>` : ""}
+      <p class="sub" style="margin:6px 0 0">Written by AI from Yahoo Finance prices and news headlines. For information and discussion only, not financial advice.</p>`
+    : `<p class="empty" style="margin-top:12px">Today's written summary isn't available yet; it's added at the next morning or evening update.</p>`}`;
+}
+renderRadar();
 
 const M = DATA.market;
 $("#market").innerHTML = `

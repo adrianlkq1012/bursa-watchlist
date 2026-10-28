@@ -161,3 +161,22 @@ td .star { padding: 2px 8px; } td .star span { display: none; }
   border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; }
 .owner button { font: inherit; font-weight: 600; border: 0; border-radius: 10px; padding: 8px 16px; background: var(--accent); color: #fff; cursor: pointer; }
 .owner .link-btn { background: none; color: var(--accent); padding: 0; font-weight: 600; }
+
+/* Global Market Radar (home page) */
+.radar-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 8px; margin-top: 12px; }
+.tile { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; display: flex; flex-direction: column; gap: 1px;
+  font-variant-numeric: tabular-nums; font-size: 13px; }
+.tile b { font-size: 16px; }
+.radar-intro { font-size: 16px; font-weight: 600; margin: 16px 0 4px; }
+.radar-items { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 0 24px; }
+.radar-item { padding: 12px 0; border-bottom: 1px solid var(--line); }
+.radar-item h3 { font-size: 15px; margin: 0 0 6px; }
+.radar-item p { font-size: 14px; margin: 0 0 6px; }
+.radar .angle { border-left: 3px solid var(--accent); padding-left: 10px; font-size: 14px; margin: 8px 0 0; }
+.radar h3 { font-size: 15px; }
+.watching, .bottom { list-style: none; padding: 0; margin: 0; font-size: 14px; }
+.watching li { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; border-bottom: 1px solid var(--line); }
+.watching li:last-child { border-bottom: 0; }
+.bottom li { padding: 3px 0; }
+.radar-src { margin: 14px 0 0; } .radar-src a { color: var(--accent); }

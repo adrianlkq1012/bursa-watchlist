@@ -14,7 +14,7 @@ from pathlib import Path
 
 import yfinance as yf
 
-from agent import ai, news
+from agent import ai, news, radar
 from agent.data import fetch_fundamentals, fetch_prices, ticker_for
 from agent.indicators import add_indicators, key_levels
 from agent.macro import drivers_for, snapshot
@@ -131,6 +131,13 @@ def main():
         "news": news.search_many(mcfg.get("news_queries", []), days=3, limit=10),
     }
 
+    # Market-wide radar first, so it gets the AI's time budget before the per-stock briefs
+    try:
+        market_radar = radar.build(relay_url(), datetime.now(MYT))
+    except Exception as e:
+        print(f"FAIL market radar: {e}")
+        market_radar = None
+
     if ai.available():
         print("AI   writing briefs via Gemini")
         market["brief"] = ai.market_brief(market, results)
@@ -171,6 +178,7 @@ def main():
     home = {
         "generated": payload["generated"], "repo": payload["repo"], "reports": reports,
         "market": {"indicators": market["indicators"], "brief": market.get("brief")},
+        "radar": market_radar,
         "watchlist": [{"code": s["code"], "short": s["short"], "close": s["close"], "change_pct": s["change_pct"],
                        "stance": (s.get("brief") or {}).get("stance")} for s in results],
     }
