@@ -61,7 +61,7 @@ Watch.onChange(renderWatch);
 const R = DATA.radar;
 const TONE = { good: "🟢", watch: "🟠", bad: "🔴" };
 const tone = (t) => TONE[String(t).trim().toLowerCase()] || "⚪";
-const KEY = ["Nasdaq", "S&P 500", "Philadelphia Semiconductor index", "Brent crude (US$/barrel)", "US 10-year Treasury yield (%)", "USD/MYR", "FBM KLCI", "Gold (US$/oz)"];
+const KEY = ["Nasdaq", "S&P 500", "Philadelphia Semiconductor index", "Brent crude (US$/barrel)", "USD/MYR", "FBM KLCI", "Gold (US$/oz)"];
 const SHORT = { "Philadelphia Semiconductor index": "Chips (SOX)", "Brent crude (US$/barrel)": "Brent", "US 10-year Treasury yield (%)": "US 10Y", "Gold (US$/oz)": "Gold" };
 function renderRadar() {
   if (!R) { $("#radar").remove(); return; }
@@ -75,15 +75,21 @@ function renderRadar() {
     <div class="tiles">${tiles}</div>
     ${B.gainers != null ? `<p class="sub" style="margin:6px 0 0">Bursa latest session: <span class="up">${B.gainers} gainers</span> · <span class="down">${B.losers} losers</span></p>` : ""}
     ${A ? `
+      ${A.headline ? `<p class="radar-headline">${esc(A.headline)}</p>` : ""}
       <p class="radar-intro">${esc(A.intro)}</p>
       <div class="radar-items">${(A.items || []).map((it, i) => `
         <div class="radar-item">
+          ${it.category ? `<span class="tag">${esc(it.category)}</span>` : ""}
           <h3>${tone(it.tone)} ${i + 1}. ${esc(it.headline)}</h3>
-          ${(it.points || []).map((p) => `<p>${esc(p)}</p>`).join("")}
+          ${it.what_happened ? `<p>${esc(it.what_happened)}</p>` : ""}
+          ${it.why ? `<p><b>Why:</b> ${esc(it.why)}</p>` : ""}
+          ${it.chain ? `<p class="chain">${esc(it.chain).replace(/-&gt;|→/g, "<span>→</span>")}</p>` : ""}
           <p class="angle"><b>Malaysia angle:</b> ${esc(it.malaysia_angle)}</p>
         </div>`).join("")}</div>
+      ${A.movers?.length ? `<h3 style="margin-top:16px">🔥 Big movers</h3><table class="movers"><tbody>${A.movers.map((m) => `
+        <tr><td><b>${esc(m.name)}</b></td><td class="${/^-|^−/.test(m.move) ? "down" : "up"}">${esc(m.move)}</td><td class="sub">${esc(m.why)}</td></tr>`).join("")}</tbody></table>` : ""}
       <div class="grid">
-        <div><h3>📌 What to watch next</h3><ul class="watching">${(A.watching || []).map((w) => `<li><span>${esc(w.label)}</span><b>${esc(w.value)}</b></li>`).join("")}</ul></div>
+        <div><h3>📌 Coming up</h3><ul class="watching">${(A.watching || []).map((w) => `<li><span>${esc(w.label)}</span><b>${esc(w.value)}</b></li>`).join("")}</ul></div>
         <div><h3>Bottom line</h3><ul class="bottom">${(A.bottom_line || []).map((b) => `<li>${esc(b.text)} ${tone(b.tone)}</li>`).join("")}</ul>
           <p style="margin:8px 0 0">${esc(A.summary)}</p>
           ${A.bursa_focus ? `<p class="angle"><b>For Bursa:</b> ${esc(A.bursa_focus)}</p>` : ""}</div>

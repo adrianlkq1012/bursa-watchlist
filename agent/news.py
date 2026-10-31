@@ -56,3 +56,51 @@ def search_many(queries: list, days: int, limit: int) -> list:
                 merged.append(item)
     merged.sort(key=lambda x: x["date"], reverse=True)
     return merged[:limit]
+
+
+def bing(query: str, days: int = 2, limit: int = 10) -> list:
+    """Bing News RSS: like search() but each item also has a short summary paragraph,
+    which tells the AI why something happened, not just that it did."""
+    url = "https://www.bing.com/news/search?" + urllib.parse.urlencode({"q": query, "format": "rss", "mkt": "en-us"})
+    try:
+        xml = urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=20).read()
+    except Exception as e:
+        print(f"     bing news failed for {query}: {e}")
+        return []
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    items = []
+    for it in ET.fromstring(xml).findall(".//item"):
+        try:
+            published = parsedate_to_datetime(it.findtext("pubDate"))
+        except (TypeError, ValueError):
+            continue
+        if published < cutoff:
+            continue
+        link = it.findtext("link") or ""
+        # Bing wraps links in a click-tracker; the real address is its url= parameter
+        link = urllib.parse.parse_qs(urllib.parse.urlparse(link).query).get("url", [link])[0]
+        source = next((el.text for el in it if el.tag.endswith("}Source")), "") or urllib.parse.urlparse(link).netloc
+        items.append({
+            "title": it.findtext("title") or "",
+            "summary": (it.findtext("description") or "")[:300],
+            "source": source,
+            "link": link,
+            "date": published.strftime("%Y-%m-%d"),
+            "time": published,
+        })
+    return items[:limit]
+
+
+def bing_many(queries: list, days: int, limit: int) -> list:
+    """Newest first, one copy of each story across all queries."""
+    merged, seen = [], set()
+    for q in queries:
+        for item in bing(q, days):
+            key = item["title"].lower()[:60]
+            if key not in seen:
+                seen.add(key)
+                merged.append(item)
+    merged.sort(key=lambda x: x["time"], reverse=True)
+    for item in merged:
+        item.pop("time")
+    return merged[:limit]

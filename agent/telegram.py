@@ -15,7 +15,7 @@ from html import escape
 LIMIT = 4096  # Telegram's maximum message length
 TONE = {"good": "🟢", "watch": "🟠", "bad": "🔴"}
 KEY = [("Nasdaq", "Nasdaq"), ("S&P 500", "S&P 500"), ("Philadelphia Semiconductor index", "Chips"),
-       ("Brent crude (US$/barrel)", "Brent"), ("US 10-year Treasury yield (%)", "US 10Y"),
+       ("Brent crude (US$/barrel)", "Brent"), ("Gold (US$/oz)", "Gold"),
        ("USD/MYR", "USD/MYR"), ("FBM KLCI", "KLCI")]
 
 
@@ -43,14 +43,19 @@ def messages(radar: dict, site: str) -> list:
     parts = [
         f"<b>🌏 Global Market Radar: What Matters for Bursa</b>\n<i>{e(radar['date'])} · {e(radar['edition'])}</i>",
         e(numbers(radar)),
-        e(a.get("intro")),
+        (f"<b>{e(a['headline'])}</b>\n" if a.get("headline") else "") + e(a.get("intro")),
     ]
     for i, it in enumerate(a.get("items", []), 1):
-        parts.append(f"{tone(it.get('tone'))} <b>{i}. {e(it.get('headline'))}</b>\n"
-                     + " ".join(e(p) for p in it.get("points", []))
+        parts.append(f"{tone(it.get('tone'))} <b>{i}. {e(it.get('headline'))}</b>"
+                     + (f"  <i>[{e(it['category'])}]</i>" if it.get("category") else "")
+                     + f"\n{e(it.get('what_happened'))}"
+                     + (f"\n<b>Why:</b> {e(it['why'])}" if it.get("why") else "")
+                     + (f"\n🔗 <code>{e(it['chain']).replace('-&gt;', '→')}</code>" if it.get("chain") else "")
                      + f"\n🇲🇾 <i>Malaysia angle:</i> {e(it.get('malaysia_angle'))}")
+    if a.get("movers"):
+        parts.append("🔥 <b>Big movers</b>\n" + "\n".join(f"• {e(m.get('name'))} <b>{e(m.get('move'))}</b>: {e(m.get('why'))}" for m in a["movers"]))
     if a.get("watching"):
-        parts.append("📌 <b>What to watch next</b>\n" + "\n".join(f"• {e(w.get('label'))}: {e(w.get('value'))}" for w in a["watching"]))
+        parts.append("📌 <b>Coming up</b>\n" + "\n".join(f"• {e(w.get('label'))}: {e(w.get('value'))}" for w in a["watching"]))
     bottom = "\n".join(f"{e(b.get('text'))} {tone(b.get('tone'))}" for b in a.get("bottom_line", []))
     parts.append(f"<b>Bottom line</b>\n{bottom}\n\n{e(a.get('summary'))}"
                  + (f"\n\n<b>For Bursa:</b> {e(a['bursa_focus'])}" if a.get("bursa_focus") else ""))

@@ -59,13 +59,13 @@ def available() -> bool:
     return _token() is not None
 
 
-def _ask(task: str, data: dict):
+def _ask(task: str, data: dict, system: str = SYSTEM):
     token = _token()
     if not token:
         return None
     body = {
         "messages": [
-            {"role": "system", "content": SYSTEM},
+            {"role": "system", "content": system},
             {"role": "user", "content": f"{task}\n\nDATA:\n{json.dumps(data, default=str)}"},
         ],
         "temperature": 0.3,
@@ -240,37 +240,70 @@ def market_brief(market: dict, stocks: list):
     return _ask(f"Write today's market brief for this portfolio. Schema:\n{MARKET_SCHEMA}", data)
 
 
+
+RADAR_SYSTEM = """You are a sharp global markets strategist writing the daily briefing for Malaysian
+investors who hold Bursa stocks. They want to know what actually happened in the world and why it
+matters to them, told as stories with cause and effect, not a list of indicator readings.
+Rules:
+- Use ONLY facts in the data (prices, moves, news headlines and summaries). Never invent numbers, quotes or events.
+- Lead with the biggest stories: earnings shocks and big company moves, wars and geopolitics, key economic
+  releases and central banks, trade and tariffs, commodity shocks. Name the companies and give their exact moves
+  (e.g. "Intel plunged 28.6% after its results").
+- Show the chain from cause to effect: what happened -> which stocks and sectors moved, by how much ->
+  what it did to the indices -> what it means for Bursa (named sectors and stocks, with their latest moves
+  from bursa.sectors when available).
+- Explain WHY using the reason in the news (a guidance cut, AI spending worries, ceasefire talks...),
+  naming the outlet (e.g. "Reuters reports...").
+- Key releases matter most: US CPI and PCE inflation, the jobs report (NFP), FOMC decisions and Powell's
+  comments, GDP, and Bank Negara's OPR decision. When one is in the news, report the actual figure against
+  what was expected and how stocks reacted.
+- Do not write about bond yields or the dollar as stories of their own; mention them only as part of a bigger
+  story (e.g. "yields jumped after the hot CPI print").
+- Leave out anything that barely moved (a 1bp yield change, a flat index) unless the news makes it a story.
+  No filler, no generic statements that would be true on any day.
+- Plain English, punchy and specific. Short sentences. Round prices and levels to 2 decimals.
+- Reply with a single JSON object matching the requested schema, nothing else."""
+
 RADAR_SCHEMA = """{
-  "intro": "2 sentences: the overall mood across world markets and Bursa, with the key reason",
+  "headline": "the day's main story in one punchy line, max 14 words",
+  "intro": "2-3 sentences: what dominated markets, the mood, and the key numbers",
   "items": [{
     "tone": "good | watch | bad (for Bursa investors)",
-    "headline": "short headline that leads with the key number, e.g. 'Nasdaq rallies 1.18%: AI confidence returns'",
-    "points": ["2-3 short sentences of facts with numbers and the reason behind the move, from the data and news"],
-    "malaysia_angle": "1-2 sentences: what this means for Bursa, naming the sectors or kinds of stocks affected"
+    "category": "one of: Earnings | Tech & AI | War & geopolitics | Economic data | Central banks | Trade & policy | Commodities | Asia | Bursa | Ringgit | Economy",
+    "headline": "names who or what, with the number, e.g. 'Intel crashes 28.6% on weak outlook, drags chip stocks'",
+    "what_happened": "2-3 sentences of facts: the specific company, asset and index moves",
+    "why": "1-2 sentences: the reason behind it, citing the news outlet",
+    "chain": "short cause-and-effect chain with arrows, e.g. 'Intel outlook cut -> INTC -28.6% -> chip index -7.2% -> Nasdaq -2.9%'",
+    "malaysia_angle": "1-2 sentences: which Bursa sectors and stocks are affected and how, citing their latest moves if available"
   }],
-  "watching": [{"label": "short name, e.g. 'US 10Y' or 'Fed decision'", "value": "level or timing, e.g. '~4.99%' or 'Thursday morning MYT'"}],
-  "bottom_line": [{"text": "3-6 words, e.g. 'Bursa breadth strengthening'", "tone": "good | watch | bad"}],
-  "summary": "2 sentences: how constructive the overall setup is and the next big tests",
-  "bursa_focus": "1 sentence: the one thing to watch on Bursa in the next session",
-  "sources": ["numbers of the news items (from news_numbered) you relied on, most important first, up to 6"]
+  "movers": [{"name": "company", "move": "e.g. -28.6% (or -12.6% Thu)", "why": "max 8 words"}],
+  "watching": [{"label": "upcoming event or level, e.g. 'US CPI', 'FOMC decision' or 'KLCI 1,600 support'", "value": "when or what level, e.g. 'Fri night MYT'"}],
+  "bottom_line": [{"text": "3-6 words", "tone": "good | watch | bad"}],
+  "summary": "2 sentences: how the setup looks for Bursa and the next big tests",
+  "bursa_focus": "1 sentence: the specific thing to watch on Bursa in the next session",
+  "sources": ["numbers of the news items (from news_numbered) you relied on, most important first, up to 8"]
 }"""
 
 
 def market_radar(radar: dict, morning: bool):
     data = {
-        "today_malaysia": f"{radar['date']}, {radar['time']} MYT",
+        "now_malaysia": f"{radar['date']}, {radar['time']} MYT",
         "edition": radar["edition"],
-        "markets_latest_session": [{k: m.get(k) for k in ("label", "session", "last", "prev", "change", "change_pct", "week_pct")}
+        "indices_commodities_fx": [{k: m.get(k) for k in ("label", "session", "last", "change", "change_pct", "week_pct")}
                                    for m in radar["markets"] if m.get("last") is not None],
-        "bursa_latest_session_breadth": radar["bursa"],
-        "news_numbered": [f"{i} | {n['date']} | {n['source']} | {n['title']}" for i, n in enumerate(radar["news"], 1)],
+        "us_stocks": radar.get("us"),
+        "bursa": radar.get("bursa"),
+        "news_numbered": [f"{i} | {n['date']} | {n['source']} | {n['title']}" + (f" | {n['summary']}" if n.get("summary") else "")
+                          for i, n in enumerate(radar["news"], 1)],
     }
-    task = f"""Write today's "Global Market Radar: What Matters for Bursa" ({'morning, before Bursa opens: lead with how Wall Street, oil and yields closed overnight' if morning else 'evening, after Bursa closes: lead with how Bursa and Asia closed today'}).
-Give 4-5 items covering the biggest drivers: US stocks (and chips/AI), oil, US yields and the Fed, Asia, the ringgit, and the KLCI's latest session with market breadth (gainers vs losers) and the large caps that moved it.
-Refer to each market's session by its weekday (e.g. "Tuesday's close"). A market whose session is today and still open (Bursa trades until 17:00 MYT) has not closed: describe it as "so far today". Only mention a scheduled event (Fed meeting, results, data release) if it appears in the news.
-Round prices and index levels to 2 decimals and yields to 2 decimals. "watching" has 4-6 entries; "bottom_line" has 3-5. Schema:
+    task = f"""Write today's "Global Market Radar: What Matters for Bursa" ({'morning, before Bursa opens: lead with the overnight stories from the US and Europe' if morning else 'evening, after Bursa closes: lead with what drove Bursa and Asia today, then the overnight setup'}).
+Give 4-6 items ranked by importance. Cover a war or geopolitical development if the news has one, and finish with an item on Bursa itself (breadth, sectors, big caps and why they moved).
+Use us_stocks: big_movers_last_session for the day's biggest company moves, and key_stocks (with previous_session_pct and five_day_pct) for moves earlier in the week that still matter.
+Refer to each session by its weekday (e.g. "Thursday's close"). A market whose session is today and still open (Bursa trades until 17:00 MYT) has not closed: say "so far today".
+Only mention a scheduled event (results, CPI, NFP, FOMC, OPR, election, talks) if it appears in the news; put the upcoming ones in "watching".
+"movers": 4-8 notable stock moves. "watching": 4-6 entries. "bottom_line": 3-5 entries. Schema:
 {RADAR_SCHEMA}"""
-    out = _ask(task, data)
+    out = _ask(task, data, system=RADAR_SYSTEM)
     if out:
         picked = []
         for n in out.get("sources", []):
