@@ -14,7 +14,7 @@ from pathlib import Path
 
 import yfinance as yf
 
-from agent import ai, news, radar
+from agent import ai, news, radar, telegram
 from agent.data import fetch_fundamentals, fetch_prices, ticker_for
 from agent.indicators import add_indicators, key_levels
 from agent.macro import drivers_for, snapshot
@@ -186,6 +186,9 @@ def main():
         html = bust((WEB / page).read_text()).replace("__DATA__", json.dumps(data).replace("</", "<\\/"))
         (docs / page).write_text(html)
     print(f"Wrote home and watchlist pages with {len(reports)} deep-dive report(s)")
+
+    owner, _, repo = (payload["repo"] or "adrianlkq1012/bursa-watchlist").partition("/")
+    telegram.send_radar(market_radar, f"https://{owner}.github.io/{repo}/")
 
 
 if __name__ == "__main__":
