@@ -296,7 +296,7 @@ def market_radar(radar: dict, morning: bool):
         "news_numbered": [f"{i} | {n['date']} | {n['source']} | {n['title']}" + (f" | {n['summary']}" if n.get("summary") else "")
                           for i, n in enumerate(radar["news"], 1)],
     }
-    task = f"""Write today's "Global Market Radar: What Matters for Bursa" ({'morning, before Bursa opens: lead with the overnight stories from the US and Europe' if morning else 'evening, after Bursa closes: lead with what drove Bursa and Asia today, then the overnight setup'}).
+    task = f"""Write today's "Global Market Radar: What Matters for Bursa" ({'morning, before Bursa opens: lead with the overnight stories from the US and Europe' if morning else 'evening, after Bursa closes: lead with what drove Bursa and Asia today, then the overnight setup' if 'Evening' in radar['edition'] else 'weekend: recap the stories that drove the week, from the US to Bursa, and what is coming up next week'}).
 Give 4-6 items ranked by importance. Cover a war or geopolitical development if the news has one, and finish with an item on Bursa itself (breadth, sectors, big caps and why they moved).
 Use us_stocks: big_movers_last_session for the day's biggest company moves, and key_stocks (with previous_session_pct and five_day_pct) for moves earlier in the week that still matter.
 Refer to each session by its weekday (e.g. "Thursday's close"). A market whose session is today and still open (Bursa trades until 17:00 MYT) has not closed: say "so far today".
