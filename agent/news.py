@@ -8,6 +8,15 @@ from email.utils import parsedate_to_datetime
 UA = {"User-Agent": "Mozilla/5.0"}
 
 
+def _parse(xml: bytes, query: str):
+    """News feeds occasionally return malformed XML; one bad feed mustn't stop the whole run."""
+    try:
+        return ET.fromstring(xml)
+    except ET.ParseError as e:
+        print(f"     bad news feed for {query}: {e} | starts {xml[:120]!r}")
+        return None
+
+
 def search(query: str, days: int = 30, limit: int = 8, match: list = None) -> list:
     """match: if given, keep only headlines that mention one of these words."""
     q = urllib.parse.quote(f"{query} when:{days}d")
@@ -17,10 +26,13 @@ def search(query: str, days: int = 30, limit: int = 8, match: list = None) -> li
     except Exception as e:
         print(f"     news fetch failed for {query}: {e}")
         return []
+    root = _parse(xml, query)
+    if root is None:
+        return []
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     items, seen = [], set()
-    for it in ET.fromstring(xml).findall(".//item"):
+    for it in root.findall(".//item"):
         source = it.findtext("source") or ""
         title = it.findtext("title") or ""
         if source and title.endswith(f" - {source}"):
@@ -67,9 +79,12 @@ def bing(query: str, days: int = 2, limit: int = 10) -> list:
     except Exception as e:
         print(f"     bing news failed for {query}: {e}")
         return []
+    root = _parse(xml, query)
+    if root is None:
+        return []
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     items = []
-    for it in ET.fromstring(xml).findall(".//item"):
+    for it in root.findall(".//item"):
         try:
             published = parsedate_to_datetime(it.findtext("pubDate"))
         except (TypeError, ValueError):

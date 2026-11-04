@@ -74,10 +74,11 @@ def send_radar(radar: dict, site: str) -> None:
     if not token or not chats.strip():
         print("TG   skipped (no Telegram secrets)")
         return
-    if not (radar or {}).get("ai"):
-        print("TG   skipped (no radar write-up this run)")
-        return
-    texts = messages(radar, site)
+    if (radar or {}).get("ai"):
+        texts = messages(radar, site)
+    else:
+        print("TG   no radar write-up this run; sending a notice instead")
+        texts = [f'⚠️ Today\'s Market Radar couldn\'t be written this run. It will try again at the next update. <a href="{escape(site)}">Open the dashboard</a>']
     for chat in (c.strip() for c in chats.split(",") if c.strip()):
         try:
             for text in texts:
