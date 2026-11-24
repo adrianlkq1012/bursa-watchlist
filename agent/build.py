@@ -14,7 +14,7 @@ from pathlib import Path
 
 import yfinance as yf
 
-from agent import ai, news, radar, telegram
+from agent import ai, due, news, radar, telegram
 from agent.data import fetch_fundamentals, fetch_prices, ticker_for
 from agent.indicators import add_indicators, key_levels
 from agent.macro import drivers_for, snapshot
@@ -107,6 +107,7 @@ def watchlist_codes(config: dict) -> list:
 
 
 def main():
+    started = datetime.now(MYT)
     config = json.loads((ROOT / "watchlist.json").read_text())
     results = []
     stocks = []
@@ -188,7 +189,15 @@ def main():
     print(f"Wrote home and watchlist pages with {len(reports)} deep-dive report(s)")
 
     owner, _, repo = (payload["repo"] or "adrianlkq1012/bursa-watchlist").partition("/")
-    telegram.send_radar(market_radar, f"https://{owner}.github.io/{repo}/")
+    # Read what's live before it's replaced: retries of an edition only message again once there's a write-up
+    edition, live = due.edition(started), due.published()
+    tried = live.get("edition") == edition
+    sent = telegram.send_radar(market_radar, f"https://{owner}.github.io/{repo}/", quiet=tried and live.get("digest"))
+    written = bool((market_radar or {}).get("ai"))
+    (docs / "status.json").write_text(json.dumps({
+        "edition": edition, "delivered": bool(written and sent),
+        "digest": bool((tried and live.get("digest")) or (sent and not written)),
+    }))
 
 
 if __name__ == "__main__":

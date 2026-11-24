@@ -6,6 +6,7 @@ or set GEMINI_API_KEY.
 """
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.request
@@ -16,7 +17,7 @@ ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/openai/chat/complet
 # "-latest" aliases always point at Google's current models, so they don't get retired
 MODELS = ["gemini-flash-latest", "gemini-flash-lite-latest"]
 RETRY_WAITS = [0, 20, 60]  # seconds; free-tier models are often briefly overloaded (503)
-TIME_BUDGET = 12 * 60  # stop trying after this many seconds in total, so a bad day can't stall the run
+TIME_BUDGET = 15 * 60  # stop trying after this many seconds in total, so a bad day can't stall the run
 _started = time.monotonic()
 TOKEN_FILE = Path(__file__).resolve().parent.parent / ".gemini-key"
 
@@ -59,7 +60,30 @@ def available() -> bool:
     return _token() is not None
 
 
-def _ask(task: str, data: dict, system: str = SYSTEM):
+_model_list = None
+_retired = set()
+
+
+def _models() -> list:
+    """MODELS, then every other stable Gemini Flash model this key can list, newest first.
+    Each has its own capacity, so when one is overloaded another often isn't."""
+    global _model_list
+    if _model_list is None:
+        _model_list = list(MODELS)
+        try:
+            req = urllib.request.Request("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200",
+                                         headers={"x-goog-api-key": _token()})
+            names = [m["name"].split("/")[-1] for m in json.loads(urllib.request.urlopen(req, timeout=30).read())["models"]
+                     if "generateContent" in m.get("supportedGenerationMethods", [])]
+            found = [n for n in names if re.fullmatch(r"gemini-[\d.]+-flash(-lite)?", n)]
+            _model_list += sorted(found, key=lambda n: float(n.split("-")[1]), reverse=True)
+        except Exception as e:
+            print(f"     couldn't list Gemini models: {type(e).__name__}")
+        print(f"     Gemini models: {', '.join(_model_list)}")
+    return _model_list
+
+
+def _ask(task: str, data: dict, system: str = SYSTEM, timeout: int = 90):
     token = _token()
     if not token:
         return None
@@ -71,11 +95,15 @@ def _ask(task: str, data: dict, system: str = SYSTEM):
         "temperature": 0.3,
         "response_format": {"type": "json_object"},
     }
-    for model, wait in ((m, w) for m in MODELS for w in RETRY_WAITS):
+    # Try every model once before waiting and going round again
+    no_quota = set()
+    for model, wait in ((m, w if i == 0 else 0) for w in RETRY_WAITS for i, m in enumerate(_models())):
         if time.monotonic() - _started + wait > TIME_BUDGET:
             print("     AI time budget used up; skipping")
             return None
         time.sleep(wait)
+        if model in _retired or model in no_quota:
+            continue
         req = urllib.request.Request(
             ENDPOINT,
             data=json.dumps({**body, "model": model}).encode(),
@@ -86,7 +114,7 @@ def _ask(task: str, data: dict, system: str = SYSTEM):
         )
         raw = b""
         try:
-            raw = urllib.request.urlopen(req, timeout=90).read()
+            raw = urllib.request.urlopen(req, timeout=timeout).read()
             content = json.loads(raw)["choices"][0]["message"]["content"].strip()
             # Some models wrap JSON in ```json fences despite response_format
             if content.startswith("```"):
@@ -96,6 +124,10 @@ def _ask(task: str, data: dict, system: str = SYSTEM):
             return out
         except urllib.error.HTTPError as e:
             print(f"     {model} failed: HTTP {e.code} {e.read()[:200]!r}")
+            if e.code == 404:
+                _retired.add(model)
+            elif e.code == 429:
+                no_quota.add(model)
         except Exception as e:
             print(f"     {model} failed: {e} | response: {raw[:300]!r}")
     return None
@@ -296,14 +328,14 @@ def market_radar(radar: dict, morning: bool):
         "news_numbered": [f"{i} | {n['date']} | {n['source']} | {n['title']}" + (f" | {n['summary']}" if n.get("summary") else "")
                           for i, n in enumerate(radar["news"], 1)],
     }
-    task = f"""Write today's "Global Market Radar: What Matters for Bursa" ({'morning, before Bursa opens: lead with the overnight stories from the US and Europe' if morning else 'evening, after Bursa closes: lead with what drove Bursa and Asia today, then the overnight setup' if 'Evening' in radar['edition'] else 'weekend: recap the stories that drove the week, from the US to Bursa, and what is coming up next week'}).
+    task = f"""Write today's "Global Market Radar: What Matters for Bursa" ({'lead with the overnight stories from the US and Europe' if morning else 'evening, after Bursa closes: lead with what drove Bursa and Asia today, then the overnight setup' if 'Evening' in radar['edition'] else 'weekend: recap the stories that drove the week, from the US to Bursa, and what is coming up next week'}).
 Give 4-6 items ranked by importance. Cover a war or geopolitical development if the news has one, and finish with an item on Bursa itself (breadth, sectors, big caps and why they moved).
 Use us_stocks: big_movers_last_session for the day's biggest company moves, and key_stocks (with previous_session_pct and five_day_pct) for moves earlier in the week that still matter.
 Refer to each session by its weekday (e.g. "Thursday's close"). A market whose session is today and still open (Bursa trades until 17:00 MYT) has not closed: say "so far today".
 Only mention a scheduled event (results, CPI, NFP, FOMC, OPR, election, talks) if it appears in the news; put the upcoming ones in "watching".
 "movers": 4-8 notable stock moves. "watching": 4-6 entries. "bottom_line": 3-5 entries. Schema:
 {RADAR_SCHEMA}"""
-    out = _ask(task, data, system=RADAR_SYSTEM)
+    out = _ask(task, data, system=RADAR_SYSTEM, timeout=150)
     if out:
         picked = []
         for n in out.get("sources", []):

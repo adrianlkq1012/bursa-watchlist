@@ -2,10 +2,18 @@ name: Daily dashboard
 
 on:
   schedule:
-    # 10:30 UTC = 6:30pm Malaysia time, after Bursa closes. Mon-Fri.
-    - cron: "30 10 * * 1-5"
-    # 23:00 UTC Sun-Thu = 7:00am Malaysia time Mon-Fri, after Wall Street closes (morning market radar)
-    - cron: "0 23 * * 0-4"
+    # GitHub starts scheduled runs late and sometimes drops them, so each edition gets several
+    # attempts; agent/due.py stops the ones that aren't needed. Minutes avoid the busy :00 and :30.
+    # Evening, after Bursa closes: from 6:13pm Malaysia time, Mon-Fri
+    - cron: "13 10 * * 1-5"
+    - cron: "53 10 * * 1-5"
+    - cron: "43 11 * * 1-5"
+    - cron: "13 13 * * 1-5"
+    # Morning, after Wall Street closes: from 6:23am Malaysia time, Mon-Fri
+    - cron: "23 22 * * 0-4"
+    - cron: "7 23 * * 0-4"
+    - cron: "47 23 * * 0-4"
+    - cron: "37 0 * * 1-5"
   workflow_dispatch: # lets you run it manually from the Actions tab
 
 permissions:
@@ -15,24 +23,32 @@ permissions:
 
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
+    outputs:
+      run: ${{ steps.due.outputs.run }}
     steps:
       - uses: actions/checkout@v4
 
+      - id: due
+        run: python3 -m agent.due
+
       - uses: actions/setup-python@v5
+        if: steps.due.outputs.run == 'true'
         with:
           python-version: "3.12"
           cache: pip
 
       - name: Install dependencies
+        if: steps.due.outputs.run == 'true'
         run: pip install -r requirements.txt
 
       - name: Build dashboard
+        if: steps.due.outputs.run == 'true'
         run: python -W ignore -m agent.build
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -40,13 +56,16 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
       - uses: actions/configure-pages@v5
+        if: steps.due.outputs.run == 'true'
 
       - uses: actions/upload-pages-artifact@v3
+        if: steps.due.outputs.run == 'true'
         with:
           path: docs
 
   deploy:
     needs: build
+    if: needs.build.outputs.run == 'true'
     runs-on: ubuntu-latest
     environment:
       name: github-pages

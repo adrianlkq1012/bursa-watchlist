@@ -70,18 +70,19 @@ def search_many(queries: list, days: int, limit: int) -> list:
     return merged[:limit]
 
 
-def bing(query: str, days: int = 2, limit: int = 10) -> list:
+def bing(query: str, days: int = 2, limit: int = 10):
     """Bing News RSS: like search() but each item also has a short summary paragraph,
-    which tells the AI why something happened, not just that it did."""
+    which tells the AI why something happened, not just that it did. None if Bing didn't
+    return a feed (it sometimes serves a web page instead)."""
     url = "https://www.bing.com/news/search?" + urllib.parse.urlencode({"q": query, "format": "rss", "mkt": "en-us"})
     try:
         xml = urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=20).read()
     except Exception as e:
         print(f"     bing news failed for {query}: {e}")
-        return []
+        return None
     root = _parse(xml, query)
     if root is None:
-        return []
+        return None
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     items = []
     for it in root.findall(".//item"):
@@ -110,12 +111,13 @@ def bing_many(queries: list, days: int, limit: int) -> list:
     """Newest first, one copy of each story across all queries."""
     merged, seen = [], set()
     for q in queries:
-        for item in bing(q, days):
+        items = bing(q, days)
+        for item in search(q, days, 10) if items is None else items:
             key = item["title"].lower()[:60]
             if key not in seen:
                 seen.add(key)
                 merged.append(item)
-    merged.sort(key=lambda x: x["time"], reverse=True)
+    merged.sort(key=lambda x: str(x.get("time") or x["date"]), reverse=True)
     for item in merged:
-        item.pop("time")
+        item.pop("time", None)
     return merged[:limit]

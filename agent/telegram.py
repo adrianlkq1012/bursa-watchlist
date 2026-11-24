@@ -60,7 +60,11 @@ def messages(radar: dict, site: str) -> list:
     parts.append(f"<b>Bottom line</b>\n{bottom}\n\n{e(a.get('summary'))}"
                  + (f"\n\n<b>For Bursa:</b> {e(a['bursa_focus'])}" if a.get("bursa_focus") else ""))
     parts.append(f'<a href="{e(site)}">Open the full dashboard</a> · AI-written from Yahoo Finance and news headlines. Not financial advice.')
-    # Long days are split into several messages at paragraph breaks
+    return split(parts)
+
+
+def split(parts: list) -> list:
+    """Long days are split into several messages at paragraph breaks."""
     chunks = [""]
     for p in filter(None, parts):
         if chunks[-1] and len(chunks[-1]) + len(p) + 2 > LIMIT:
@@ -69,16 +73,43 @@ def messages(radar: dict, site: str) -> list:
     return chunks
 
 
-def send_radar(radar: dict, site: str) -> None:
+def digest(radar: dict, site: str) -> list:
+    """Plain numbers and headlines, for when the AI is unavailable."""
+    e = lambda s: escape(str(s or ""))
+    parts = [f"<b>🌏 Global Market Radar: numbers only</b>\n<i>{e(radar['date'])} · {e(radar['edition'])}</i>",
+             "⚠️ Google's free AI is overloaded, so there's no write-up yet. A later attempt will send it if the AI recovers.",
+             e(numbers(radar))]
+    us = (radar.get("us") or {}).get("big_movers_last_session") or []
+    if us:
+        parts.append("🔥 <b>US big movers</b>\n" + "\n".join(f"• {e(m['name'])} <b>{m['change_pct']:+.1f}%</b>" for m in us[:8]))
+    b = radar.get("bursa") or {}
+    if b:
+        parts.append(f"🇲🇾 <b>Bursa</b>: {b['gainers']} gainers, {b['losers']} losers\n"
+                     + "\n".join(f"• {e(k)} {v['average_pct']:+.2f}%" for k, v in (b.get("sectors") or {}).items()))
+    if radar.get("news"):
+        parts.append("📰 <b>Headlines</b>\n" + "\n".join(
+            f'• <a href="{e(n["link"])}">{e(n["title"])}</a> ({e(n["source"])})' for n in radar["news"][:6]))
+    parts.append(f'<a href="{e(site)}">Open the dashboard</a>')
+    return split(parts)
+
+
+def send_radar(radar: dict, site: str, quiet: bool = False) -> bool:
+    """True if every chat received it. quiet: send only a full write-up, not a fallback."""
     token, chats = os.environ.get("TELEGRAM_BOT_TOKEN"), os.environ.get("TELEGRAM_CHAT_ID", "")
     if not token or not chats.strip():
         print("TG   skipped (no Telegram secrets)")
-        return
+        return False
     if (radar or {}).get("ai"):
         texts = messages(radar, site)
+    elif quiet:
+        print("TG   no write-up again; the numbers were already sent")
+        return False
+    elif radar:
+        print("TG   no write-up; sending the numbers")
+        texts = digest(radar, site)
     else:
-        print("TG   no radar write-up this run; sending a notice instead")
-        texts = [f'⚠️ Today\'s Market Radar couldn\'t be written this run. It will try again at the next update. <a href="{escape(site)}">Open the dashboard</a>']
+        texts = [f'⚠️ Today\'s Market Radar couldn\'t be built. Another attempt follows. <a href="{escape(site)}">Open the dashboard</a>']
+    ok = True
     for chat in (c.strip() for c in chats.split(",") if c.strip()):
         try:
             for text in texts:
@@ -88,6 +119,9 @@ def send_radar(radar: dict, site: str) -> None:
             print(f"TG   radar sent ({len(texts)} message(s))")
         except urllib.error.HTTPError as err:
             # Never print the token or chat id: the logs of a public repo are public
+            ok = False
             print(f"TG   send failed: HTTP {err.code} {json.loads(err.read() or b'{}').get('description', '')}")
         except Exception as err:
+            ok = False
             print(f"TG   send failed: {type(err).__name__}")
+    return ok

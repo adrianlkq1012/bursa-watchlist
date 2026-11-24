@@ -120,12 +120,13 @@ def bursa(relay: str) -> dict:
 
 def build(relay: str, now: datetime) -> dict:
     weekend = now.weekday() >= 5
-    morning = now.hour < 12 and not weekend
+    morning = now.hour < 17 and not weekend
     radar = {
         "date": now.strftime("%-d %B %Y | %A"),
         "time": now.strftime("%H:%M"),
         "edition": "Weekend edition, looking back on the week" if weekend
-                   else "Morning edition, before Bursa opens" if morning else "Evening edition, after Bursa closes",
+                   else "Morning edition, before Bursa opens" if now.hour < 9
+                   else "Daytime edition, Bursa still open" if morning else "Evening edition, after Bursa closes",
         "markets": [quote(*m) for m in MARKETS],
         "us": us_movers(),
         "bursa": bursa(relay),
