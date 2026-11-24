@@ -18,8 +18,8 @@ def edition(now: datetime):
     """The edition a run at this time belongs to, or None if it's too late or early to be useful."""
     if now.weekday() >= 5:
         return f"{now:%Y-%m-%d} weekend"
-    if now.hour < 5:
-        return None  # a badly delayed evening run; Wall Street is still trading
+    if (now.hour, now.minute) < (9, 20):
+        return None  # a badly delayed evening run; the morning edition waits for Bursa's open
     return f"{now:%Y-%m-%d} {'morning' if now.hour < 17 else 'evening'}"
 
 

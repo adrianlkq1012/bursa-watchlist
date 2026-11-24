@@ -118,6 +118,24 @@ def bursa(relay: str) -> dict:
     }
 
 
+def bursa_open(now: datetime) -> dict:
+    """How the KLCI started today: its open against yesterday's close, and where it is now.
+    traded_today is False on holidays, before the open, or if Yahoo hasn't caught up yet."""
+    try:
+        h = yf.Ticker("^KLSE").history(period="1mo").dropna(subset=["Close"])
+        today, prev = h.iloc[-1], float(h["Close"].iloc[-2])
+        if h.index[-1].date() != now.date():
+            return {"traded_today": False}
+        pct = lambda v: round((float(v) / prev - 1) * 100, 2)
+        return {"traded_today": True, "previous_close": round(prev, 2),
+                "open": round(float(today["Open"]), 2), "open_pct": pct(today["Open"]),
+                "now": round(float(today["Close"]), 2), "now_pct": pct(today["Close"]),
+                "high": round(float(today["High"]), 2), "low": round(float(today["Low"]), 2)}
+    except Exception as e:
+        print(f"     radar Bursa open failed: {e}")
+        return {}
+
+
 def build(relay: str, now: datetime) -> dict:
     weekend = now.weekday() >= 5
     morning = now.hour < 17 and not weekend
@@ -125,9 +143,11 @@ def build(relay: str, now: datetime) -> dict:
         "date": now.strftime("%-d %B %Y | %A"),
         "time": now.strftime("%H:%M"),
         "edition": "Weekend edition, looking back on the week" if weekend
-                   else "Morning edition, before Bursa opens" if now.hour < 9
+                   else "Early edition, before Bursa opens" if now.hour < 9
+                   else "Morning edition, how Bursa started the day" if now.hour < 12
                    else "Daytime edition, Bursa still open" if morning else "Evening edition, after Bursa closes",
         "markets": [quote(*m) for m in MARKETS],
+        "bursa_open": bursa_open(now),
         "us": us_movers(),
         "bursa": bursa(relay),
         # Mondays and Saturdays look back over the weekend

@@ -317,18 +317,26 @@ RADAR_SCHEMA = """{
 }"""
 
 
+BURSA_START = """morning, shortly after Bursa's 9am open: the headline, intro and item 1 (category Bursa) are about how
+Bursa started today: the KLCI's open against yesterday's close and where it is now (klci_today), breadth, which sectors and
+big caps lead or drag, and the overnight story behind it. The remaining items cover the overnight stories from the US and
+Europe, so do not add a second Bursa item at the end. If klci_today.traded_today is not true, say plainly that today's Bursa
+prices are not available (it may be a holiday) and treat all Bursa figures as the previous session's"""
+
+
 def market_radar(radar: dict, morning: bool):
     data = {
         "now_malaysia": f"{radar['date']}, {radar['time']} MYT",
         "edition": radar["edition"],
         "indices_commodities_fx": [{k: m.get(k) for k in ("label", "session", "last", "change", "change_pct", "week_pct")}
                                    for m in radar["markets"] if m.get("last") is not None],
+        "klci_today": radar.get("bursa_open"),
         "us_stocks": radar.get("us"),
         "bursa": radar.get("bursa"),
         "news_numbered": [f"{i} | {n['date']} | {n['source']} | {n['title']}" + (f" | {n['summary']}" if n.get("summary") else "")
                           for i, n in enumerate(radar["news"], 1)],
     }
-    task = f"""Write today's "Global Market Radar: What Matters for Bursa" ({'lead with the overnight stories from the US and Europe' if morning else 'evening, after Bursa closes: lead with what drove Bursa and Asia today, then the overnight setup' if 'Evening' in radar['edition'] else 'weekend: recap the stories that drove the week, from the US to Bursa, and what is coming up next week'}).
+    task = f"""Write today's "Global Market Radar: What Matters for Bursa" ({BURSA_START if 'Morning' in radar['edition'] else 'lead with the overnight stories from the US and Europe' if morning else 'evening, after Bursa closes: lead with what drove Bursa and Asia today, then the overnight setup' if 'Evening' in radar['edition'] else 'weekend: recap the stories that drove the week, from the US to Bursa, and what is coming up next week'}).
 Give 4-6 items ranked by importance. Cover a war or geopolitical development if the news has one, and finish with an item on Bursa itself (breadth, sectors, big caps and why they moved).
 Use us_stocks: big_movers_last_session for the day's biggest company moves, and key_stocks (with previous_session_pct and five_day_pct) for moves earlier in the week that still matter.
 Refer to each session by its weekday (e.g. "Thursday's close"). A market whose session is today and still open (Bursa trades until 17:00 MYT) has not closed: say "so far today".

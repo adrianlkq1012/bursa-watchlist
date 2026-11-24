@@ -37,12 +37,23 @@ def numbers(radar: dict) -> str:
     return " · ".join(out)
 
 
+def opening(radar: dict) -> str:
+    o = radar.get("bursa_open") or {}
+    if not o.get("traded_today") or "Morning" not in radar["edition"]:
+        return ""
+    b = radar.get("bursa") or {}
+    breadth = f"\n{b['gainers']} gainers, {b['losers']} losers so far" if b else ""
+    return (f"🔔 <b>Bursa's start</b>: KLCI opened {o['open']:,.2f} ({o['open_pct']:+.2f}%), "
+            f"now {o['now']:,.2f} ({o['now_pct']:+.2f}%){breadth}")
+
+
 def messages(radar: dict, site: str) -> list:
     a = radar["ai"]
     e = lambda s: escape(str(s or ""))
     parts = [
         f"<b>🌏 Global Market Radar: What Matters for Bursa</b>\n<i>{e(radar['date'])} · {e(radar['edition'])}</i>",
         e(numbers(radar)),
+        opening(radar),
         (f"<b>{e(a['headline'])}</b>\n" if a.get("headline") else "") + e(a.get("intro")),
     ]
     for i, it in enumerate(a.get("items", []), 1):
@@ -78,7 +89,8 @@ def digest(radar: dict, site: str) -> list:
     e = lambda s: escape(str(s or ""))
     parts = [f"<b>🌏 Global Market Radar: numbers only</b>\n<i>{e(radar['date'])} · {e(radar['edition'])}</i>",
              "⚠️ Google's free AI is overloaded, so there's no write-up yet. A later attempt will send it if the AI recovers.",
-             e(numbers(radar))]
+             e(numbers(radar)), opening(radar)]
+    parts = [p for p in parts if p]
     us = (radar.get("us") or {}).get("big_movers_last_session") or []
     if us:
         parts.append("🔥 <b>US big movers</b>\n" + "\n".join(f"• {e(m['name'])} <b>{m['change_pct']:+.1f}%</b>" for m in us[:8]))
