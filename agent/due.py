@@ -24,12 +24,14 @@ def edition(now: datetime):
 
 
 def published() -> dict:
-    try:
-        req = urllib.request.Request(f"{SITE}status.json?t={int(time.time())}", headers={"User-Agent": "Mozilla/5.0"})
-        return json.loads(urllib.request.urlopen(req, timeout=20).read())
-    except Exception as e:
-        print(f"DUE  no published status ({e})")
-        return {}
+    for wait in (0, 5, 15, 30):
+        time.sleep(wait)
+        try:
+            req = urllib.request.Request(f"{SITE}status.json?t={int(time.time())}", headers={"User-Agent": "Mozilla/5.0"})
+            return json.loads(urllib.request.urlopen(req, timeout=20).read())
+        except Exception as e:
+            print(f"DUE  no published status ({e})")
+    return {}  # better a repeated message than a missing one
 
 
 def due(now: datetime, event: str, status: dict) -> bool:
