@@ -7,6 +7,7 @@ from datetime import datetime
 import yfinance as yf
 
 from agent import ai, news
+from agent.macro import daily
 
 # (ticker, label, unit) - unit "pt" means the change is shown in points, not percent
 MARKETS = [
@@ -51,7 +52,7 @@ BURSA_SECTORS = {
 def quote(ticker: str, label: str, unit: str) -> dict:
     q = {"ticker": ticker, "label": label}
     try:
-        close = yf.Ticker(ticker).history(period="1mo")["Close"].dropna()
+        close = daily(ticker, "1mo")["Close"]
         last, prev = float(close.iloc[-1]), float(close.iloc[-2])
         q.update(
             last=round(last, 4), prev=round(prev, 4),
@@ -122,7 +123,7 @@ def bursa_open(now: datetime) -> dict:
     """How the KLCI started today: its open against yesterday's close, and where it is now.
     traded_today is False on holidays, before the open, or if Yahoo hasn't caught up yet."""
     try:
-        h = yf.Ticker("^KLSE").history(period="1mo").dropna(subset=["Close"])
+        h = daily("^KLSE", "1mo")
         today, prev = h.iloc[-1], float(h["Close"].iloc[-2])
         if h.index[-1].date() != now.date():
             return {"traded_today": False}
