@@ -2,18 +2,10 @@ name: Daily dashboard
 
 on:
   schedule:
-    # GitHub starts scheduled runs late and sometimes drops them, so each edition gets several
-    # attempts; agent/due.py stops the ones that aren't needed. Minutes avoid the busy :00 and :30.
-    # Evening, after Bursa closes: from 6:13pm Malaysia time, Mon-Fri
-    - cron: "13 10 * * 1-5"
-    - cron: "53 10 * * 1-5"
-    - cron: "43 11 * * 1-5"
-    - cron: "13 13 * * 1-5"
-    # Morning, after Bursa's 9am open (prices lag 15 minutes): from 9:27am Malaysia time, Mon-Fri
-    - cron: "27 1 * * 1-5"
-    - cron: "57 1 * * 1-5"
-    - cron: "37 2 * * 1-5"
-    - cron: "37 3 * * 1-5"
+    # GitHub's timer can run many hours late, so check every half hour around the clock:
+    # agent/due.py builds an edition only when it is due and not yet delivered, and otherwise
+    # stops within seconds. However late the timer is, some check lands in each window.
+    - cron: "17,47 * * * *"
   workflow_dispatch: # lets you run it manually from the Actions tab
 
 permissions:

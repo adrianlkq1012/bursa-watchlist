@@ -1,7 +1,7 @@
 """Decides whether a scheduled run still has work to do (standard library only).
 
 GitHub sometimes starts scheduled runs hours late or drops them, and the free AI is sometimes
-overloaded, so daily.yml schedules several attempts per edition. The published status.json says
+overloaded, so daily.yml checks every half hour. The published status.json says
 which edition was last delivered; attempts after a delivered one stop here.
 """
 import json
@@ -18,9 +18,12 @@ def edition(now: datetime):
     """The edition a run at this time belongs to, or None if it's too late or early to be useful."""
     if now.weekday() >= 5:
         return f"{now:%Y-%m-%d} weekend"
-    if (now.hour, now.minute) < (9, 20):
-        return None  # a badly delayed evening run; the morning edition waits for Bursa's open
-    return f"{now:%Y-%m-%d} {'morning' if now.hour < 17 else 'evening'}"
+    t = (now.hour, now.minute)
+    if (9, 20) <= t < (17, 0):
+        return f"{now:%Y-%m-%d} morning"  # from Bursa's open, allowing for 15-minute-old prices
+    if t >= (18, 10):
+        return f"{now:%Y-%m-%d} evening"
+    return None
 
 
 def published() -> dict:
