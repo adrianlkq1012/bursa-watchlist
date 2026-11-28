@@ -2,6 +2,11 @@ name = "bursa-relay"
 main = "worker.js"
 compatibility_date = "2026-10-01"
 
+# On-time starts for the radar (times are UTC; Malaysia is UTC+8), weekdays only:
+# morning edition 09:20 with a 09:35 backup, evening edition 18:12 with an 18:40 backup.
+[triggers]
+crons = ["20,35 1 * * 1-5", "12,40 10 * * 1-5"]
+
 # Stores the owner's watchlist and a hash of their passcode
 [[kv_namespaces]]
 binding = "WATCHLIST"

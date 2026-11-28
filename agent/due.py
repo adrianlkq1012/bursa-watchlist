@@ -48,7 +48,10 @@ def due(now: datetime, event: str, status: dict) -> bool:
 
 if __name__ == "__main__":
     now = datetime.now(MYT)
-    go = due(now, os.environ.get("GITHUB_EVENT_NAME", ""), published())
+    event = os.environ.get("GITHUB_EVENT_NAME", "")
+    if event == "workflow_dispatch" and os.environ.get("TIMER") == "true":
+        event = "schedule"  # the relay's on-time timer: same rules as GitHub's own schedule
+    go = due(now, event, published())
     print(f"DUE  {edition(now)}: {'running' if go else 'nothing to do'}")
     with open(os.environ.get("GITHUB_OUTPUT", os.devnull), "a") as f:
         f.write(f"run={'true' if go else 'false'}\n")

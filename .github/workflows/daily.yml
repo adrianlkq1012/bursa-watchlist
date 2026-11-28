@@ -7,6 +7,11 @@ on:
     # stops within seconds. However late the timer is, some check lands in each window.
     - cron: "17,47 * * * *"
   workflow_dispatch: # lets you run it manually from the Actions tab
+    inputs:
+      timer:
+        description: "Started by the relay's on-time timer (builds only an edition that is due)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -28,6 +33,8 @@ jobs:
 
       - id: due
         run: python3 -m agent.due
+        env:
+          TIMER: ${{ inputs.timer }}
 
       - uses: actions/setup-python@v5
         if: steps.due.outputs.run == 'true'

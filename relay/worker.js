@@ -46,6 +46,23 @@ export default {
       return reply({ error: String(e.message || e) }, e.status || 502);
     }
   },
+
+  // GitHub's own schedule runs late or not at all (on some days only 2-3 of 48 half-hourly
+  // checks start), so the radar's editions arrived hours late. Cloudflare's cron triggers fire
+  // on time: they start the Daily dashboard workflow as a "timer" run, which (like GitHub's
+  // schedule) only builds an edition that is due and not yet delivered. A second trigger
+  // shortly after each one is a harmless backup. Needs the GH_TOKEN secret (a fine-grained
+  // token with Actions read and write on this repository only).
+  async scheduled(event, env, ctx) {
+    if (!env.GH_TOKEN) return console.log("timer: no GH_TOKEN secret, nothing started");
+    const r = await fetch("https://api.github.com/repos/adrianlkq1012/bursa-watchlist/actions/workflows/daily.yml/dispatches", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${env.GH_TOKEN}`, Accept: "application/vnd.github+json",
+                 "User-Agent": "bursa-relay", "X-GitHub-Api-Version": "2022-11-28" },
+      body: JSON.stringify({ ref: "main", inputs: { timer: "true" } }),
+    });
+    console.log(`timer ${event.cron}: GitHub answered ${r.status}`);  // 204 means started
+  },
 };
 
 const memo = new Map();
